@@ -9,8 +9,8 @@ class StudyListView(generics.ListCreateAPIView):
     serializer_class = StudySerializer
 
     def get_queryset(self):
-        # queryset = Study.objects.all()
-        queryset = Study.objects.filter(should_exclude=True)
+        queryset = Study.objects.all()
+        # queryset = Study.objects.filter(should_exclude=True)
         title = self.request.GET.get('title')
         pmid = self.request.GET.get('pmid')
         year = self.request.GET.get('year')
