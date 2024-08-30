@@ -59,6 +59,7 @@ CORS_ALLOW_ALL_ORIGINS = True  # This allows all origins, you can restrict it to
 
 ROOT_URLCONF = 'PsychGen_Africa.urls'
 
+
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',

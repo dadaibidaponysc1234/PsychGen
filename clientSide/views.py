@@ -1,42 +1,80 @@
 from rest_framework import generics
 from ResearchApp.models import Study, Disorder, ResearchRegion, BiologicalModality, GeneticSourceMaterial,  ArticleType
 from .serializers import StudySerializer,DisorderStudyCountSerializer,ResearchRegionStudyCountSerializer,BiologicalModalityStudyCountSerializer,GeneticSourceMaterialStudyCountSerializer,YearlyStudyCountSerializer
-from django.db.models import Count
+from django.db.models import Count, Q
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.pagination import PageNumberPagination
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+# from django.db.models import
+
+# the pagination class
+class StudyListPagination(PageNumberPagination):
+    page_size=10
 
 class StudyListView(generics.ListCreateAPIView):
     serializer_class = StudySerializer
+    pagination_class = StudyListPagination
 
     def get_queryset(self):
         queryset = Study.objects.all()
-        # queryset = Study.objects.filter(should_exclude=True)
+        
         title = self.request.GET.get('title')
-        pmid = self.request.GET.get('pmid')
         year = self.request.GET.get('year')
+        research_regions = self.request.GET.get('research_regions')
+        disorder = self.request.GET.get('disorder')
+        article_type = self.request.GET.get('article_type')
 
         if title:
-            queryset = queryset.filter(title__icontains=title)
-        if pmid:
-            queryset = queryset.filter(pmid__icontains=pmid)
+            queryset = queryset.filter(Q(title__icontains=title) | Q(lead_author__icontains=title))
+        if disorder:
+            queryset = queryset.filter(disorder__disorder_name__icontains=disorder)
+        if research_regions:
+            queryset = queryset.filter(research_regions__name__icontains=research_regions)
+        if article_type:
+            queryset = queryset.filter(article_type__article_name__icontains=article_type)
         if year:
             queryset = queryset.filter(year=year)
 
         return queryset
     
+#function for the recommender 
+def recommend_similar_studies(study, top_n=5):
+    # Get all studies except the current one
+    all_studies = Study.objects.exclude(id=study.id)
+    
+    # Combine title and findings/conclusions to form the content
+    study_content = [study.title + " " + (study.findings_conclusions or "")] + \
+                    [s.title + " " + (s.findings_conclusions or "") for s in all_studies]
+    
+    # Calculate TF-IDF and cosine similarity
+    tfidf = TfidfVectorizer(stop_words='english').fit_transform(study_content)
+    cosine_sim = cosine_similarity(tfidf[0:1], tfidf[1:]).flatten()
+    
+    # Get the top N similar studies
+    similar_indices = cosine_sim.argsort()[-top_n:][::-1]
+    similar_studies = [all_studies[int(i)] for i in similar_indices]
+    
+    return similar_studies
+
+
 class StudyDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Study.objects.all()
     serializer_class = StudySerializer
 
-# class DisorderListView(generics.ListCreateAPIView):
-#     queryset = Disorder.objects.all()
-#     serializer_class = DisorderSerializer
+    def get_recommended_articles(self, study):
+        return recommend_similar_studies(study)
 
-# class DisorderDetailView(generics.RetrieveUpdateDestroyAPIView):
-#     queryset = Disorder.objects.all()
-#     serializer_class = DisorderSerializer
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        recommended_articles = self.get_recommended_articles(instance)
+        serializer = self.get_serializer(instance)
+        data = serializer.data
+        data['recommended_articles'] = StudySerializer(recommended_articles, many=True).data
+        return Response(data)
 
-# Similarly, create views for other models as needed
 
 class DisorderStudyCountView(APIView):
     def get(self, request):
