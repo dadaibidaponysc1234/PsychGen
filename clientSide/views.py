@@ -50,6 +50,20 @@ class StudyDeleteView(generics.DestroyAPIView):
         self.perform_destroy(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)
         
+
+class StudyBulkDeleteView(APIView):
+
+    def post(self, request, *args, **kwargs):
+        ids = request.data.get('ids', [])
+        if not ids:
+            return Response({"error": "No IDs provided"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        studies = Study.objects.filter(id__in=ids)
+        if not studies.exists():
+            return Response({"error": "Studies not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        studies.delete()
+        return Response({"message": "Studies deleted successfully"}, status=status.HTTP_200_OK)
 #function for the recommender 
 def recommend_similar_studies(study, top_n=5):
     # Get all studies except the current one
