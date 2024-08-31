@@ -5,6 +5,7 @@ from django.db.models import Count, Q
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.pagination import PageNumberPagination
+from rest_framework import status
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -39,7 +40,16 @@ class StudyListView(generics.ListCreateAPIView):
             queryset = queryset.filter(year=year)
 
         return queryset
-    
+
+class StudyDeleteView(generics.DestroyAPIView):
+    queryset = Study.objects.all()
+    serializer_class = StudySerializer
+
+    def delete(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+        
 #function for the recommender 
 def recommend_similar_studies(study, top_n=5):
     # Get all studies except the current one

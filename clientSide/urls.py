@@ -1,9 +1,11 @@
 from django.urls import path
-from .views import StudyListView, StudyDetailView, DisorderStudyCountView, ResearchRegionStudyCountView,BiologicalModalityStudyCountView,GeneticSourceMaterialStudyCountView,YearlyStudyCountView
+from .views import StudyListView, StudyDetailView, DisorderStudyCountView, ResearchRegionStudyCountView,BiologicalModalityStudyCountView,GeneticSourceMaterialStudyCountView,YearlyStudyCountView,StudyDeleteView
 
 urlpatterns = [
     path('studies/', StudyListView.as_view(), name='study-list'),
     path('studies/<int:pk>/', StudyDetailView.as_view(), name='study-detail'),
+    path('studies/delete/<int:pk>/', StudyDeleteView.as_view(), name='study-delete'),
+
     # path('disorders/', DisorderListView.as_view(), name='disorder-list'),
     # path('disorders/<int:pk>/', DisorderDetailView.as_view(), name='disorder-detail'),
     # Add other URL patterns as needed
