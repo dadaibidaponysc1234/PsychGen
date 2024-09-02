@@ -177,7 +177,7 @@ class YearlyStudyCountView(APIView):
             Study.objects
             .values('year')  # Group by year
             .annotate(study_count=Count('id'))  # Count the number of studies for each year
-            .order_by('-year')  # Order by year, descending
+            .order_by('year')  # Order by year, descending
         )
 
         # Prepare data for the serializer
