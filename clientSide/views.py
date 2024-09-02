@@ -28,7 +28,6 @@ class StudyListView(generics.ListCreateAPIView):
         disorder = self.request.GET.get('disorder')
         article_type = self.request.GET.get('article_type')
 
-
         if title:
             queryset = queryset.filter(Q(title__icontains=title) | Q(lead_author__icontains=title))
         if disorder:
@@ -138,13 +137,13 @@ class BiologicalModalityStudyCountView(APIView):
         )
 
         # Prepare data for the serializer
-        data = [
-            {'modality_name': item['biological_modalities__modality_name'], 'study_count': item['study_count']}
-            for item in biological_modality_counts
-        ]
+        # data = [
+        #     {'modality_name': item['biological_modalities__modality_name'], 'study_count': item['study_count']}
+        #     for item in biological_modality_counts
+        # ]
 
         # Serialize the data
-        serializer = BiologicalModalityStudyCountSerializer(data, many=True)
+        serializer = BiologicalModalityStudyCountSerializer(biological_modality_counts, many=True)
         return Response(serializer.data)
     
 
@@ -161,13 +160,13 @@ class GeneticSourceMaterialStudyCountView(APIView):
         )
 
         # Prepare data for the serializer
-        data = [
-            {'material_type': item['genetic_source_materials__material_type'], 'study_count': item['study_count']}
-            for item in genetic_source_material_counts
-        ]
+        # data = [
+        #     {'material_type': item['genetic_source_materials__material_type'], 'study_count': item['study_count']}
+        #     for item in genetic_source_material_counts
+        # ]
 
         # Serialize the data
-        serializer = GeneticSourceMaterialStudyCountSerializer(data, many=True)
+        serializer = GeneticSourceMaterialStudyCountSerializer(genetic_source_material_counts, many=True)
         return Response(serializer.data)
     
 
@@ -178,7 +177,7 @@ class YearlyStudyCountView(APIView):
             Study.objects
             .values('year')  # Group by year
             .annotate(study_count=Count('id'))  # Count the number of studies for each year
-            .order_by('year')  # Order by year, descending
+            .order_by('-year')  # Order by year, descending
         )
 
         # Prepare data for the serializer
