@@ -61,11 +61,11 @@ class ResearchRegionStudyCountSerializer(serializers.Serializer):
     study_count = serializers.IntegerField()
 
 class BiologicalModalityStudyCountSerializer(serializers.Serializer):
-    modality_name = serializers.CharField()
+    biological_modalities__modality_name = serializers.CharField()
     study_count = serializers.IntegerField()
 
 class GeneticSourceMaterialStudyCountSerializer(serializers.Serializer):
-    material_type = serializers.CharField()
+    genetic_source_materials__material_type = serializers.CharField()
     study_count = serializers.IntegerField()
 
 class YearlyStudyCountSerializer(serializers.Serializer):

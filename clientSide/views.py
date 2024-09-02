@@ -28,6 +28,7 @@ class StudyListView(generics.ListCreateAPIView):
         disorder = self.request.GET.get('disorder')
         article_type = self.request.GET.get('article_type')
 
+
         if title:
             queryset = queryset.filter(Q(title__icontains=title) | Q(lead_author__icontains=title))
         if disorder:
@@ -177,7 +178,7 @@ class YearlyStudyCountView(APIView):
             Study.objects
             .values('year')  # Group by year
             .annotate(study_count=Count('id'))  # Count the number of studies for each year
-            .order_by('-year')  # Order by year, descending
+            .order_by('year')  # Order by year, descending
         )
 
         # Prepare data for the serializer
