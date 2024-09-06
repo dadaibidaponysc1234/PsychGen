@@ -11,6 +11,27 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 # from django.db.models import
 
+class AutoCompleteSuggestionView(APIView):
+    def get(self, request):
+        query = request.GET.get('query', '')
+        
+        if not query:
+            return Response({"error": "No query provided"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Fetch suggestions based on the partial query. You can modify this logic for other fields.
+        study_suggestions = Study.objects.filter(title__icontains=query).values_list('title', flat=True)[:5]
+        disorder_suggestions = Disorder.objects.filter(disorder_name__icontains=query).values_list('disorder_name', flat=True)[:5]
+        author_suggestions = Study.objects.filter(lead_author__icontains=query).values_list('lead_author', flat=True)[:5]
+
+        # Combine suggestions for title, disorders, and authors
+        suggestions = {
+            "study_titles": list(study_suggestions),
+            "disorders": list(disorder_suggestions),
+            "authors": list(author_suggestions),
+        }
+
+        return Response(suggestions, status=status.HTTP_200_OK)
+
 # the pagination class
 class StudyListPagination(PageNumberPagination):
     page_size=10
@@ -30,6 +51,8 @@ class StudyListView(generics.ListCreateAPIView):
 
         if title:
             queryset = queryset.filter(Q(title__icontains=title) | Q(lead_author__icontains=title))
+        else:
+            queryset = Study.objects.all()
         if disorder:
             queryset = queryset.filter(disorder__disorder_name__icontains=disorder)
         if research_regions:
