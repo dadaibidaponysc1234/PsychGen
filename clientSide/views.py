@@ -1,6 +1,6 @@
 from rest_framework import generics
-from ResearchApp.models import Study, Disorder, ResearchRegion, BiologicalModality, GeneticSourceMaterial,  ArticleType
-from .serializers import StudySerializer,DisorderStudyCountSerializer,ResearchRegionStudyCountSerializer,BiologicalModalityStudyCountSerializer,GeneticSourceMaterialStudyCountSerializer,YearlyStudyCountSerializer
+from ResearchApp.models import Study, Disorder, BiologicalModality, GeneticSourceMaterial, ArticleType, StudyDesign, Country
+from .serializers import StudySerializer,DisorderStudyCountSerializer,ResearchRegionStudyCountSerializer,BiologicalModalityStudyCountSerializer,GeneticSourceMaterialStudyCountSerializer,YearlyStudyCountSerializer,CountrySerializer
 from django.db.models import Count, Q
 from rest_framework.response import Response
 from rest_framework.views import APIView

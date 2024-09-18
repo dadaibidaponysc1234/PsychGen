@@ -1,6 +1,5 @@
 from rest_framework import serializers
-from ResearchApp.models import Study, Disorder, ResearchRegion, BiologicalModality, GeneticSourceMaterial,  ArticleType
-
+from ResearchApp.models import Study, Disorder, BiologicalModality, GeneticSourceMaterial, ArticleType, StudyDesign, Country
 from rest_framework import serializers
 # from your_app.models import (
 #     Study, Disorder, ResearchRegion, StudyDesign, BiologicalModality, 
@@ -12,10 +11,10 @@ class DisorderSerializer(serializers.ModelSerializer):
         model = Disorder
         fields = '__all__'
 
-class ResearchRegionSerializer(serializers.ModelSerializer):
+class CountrySerializer(serializers.ModelSerializer):
     class Meta:
-        model = ResearchRegion
-        fields = '__all__'
+        model = Country
+        fields = ['id', 'name']
 
 # class StudyDesignSerializer(serializers.ModelSerializer):
 #     class Meta:
@@ -39,8 +38,7 @@ class ArticleTypeSerializer(serializers.ModelSerializer):
 
 class StudySerializer(serializers.ModelSerializer):
     disorder = DisorderSerializer(many=True, read_only=True)
-    research_regions = ResearchRegionSerializer(many=True, read_only=True)
-    # study_designs = StudyDesignSerializer(many=True, read_only=True)
+    Country = CountrySerializer(many=True, read_only=True)
     biological_modalities = BiologicalModalitySerializer(many=True, read_only=True)
     genetic_source_materials = GeneticSourceMaterialSerializer(many=True, read_only=True)
     article_type = ArticleTypeSerializer(many=True, read_only=True)
@@ -48,7 +46,6 @@ class StudySerializer(serializers.ModelSerializer):
     class Meta:
         model = Study
         fields = '__all__'
-
 
 
 class DisorderStudyCountSerializer(serializers.Serializer):
