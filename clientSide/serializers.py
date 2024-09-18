@@ -14,7 +14,7 @@ class DisorderSerializer(serializers.ModelSerializer):
 class CountrySerializer(serializers.ModelSerializer):
     class Meta:
         model = Country
-        fields = ['id', 'name']
+        fields = '__all__'
 
 # class StudyDesignSerializer(serializers.ModelSerializer):
 #     class Meta:
@@ -38,7 +38,7 @@ class ArticleTypeSerializer(serializers.ModelSerializer):
 
 class StudySerializer(serializers.ModelSerializer):
     disorder = DisorderSerializer(many=True, read_only=True)
-    Country = CountrySerializer(many=True, read_only=True)
+    countries = CountrySerializer(many=True, read_only=True)
     biological_modalities = BiologicalModalitySerializer(many=True, read_only=True)
     genetic_source_materials = GeneticSourceMaterialSerializer(many=True, read_only=True)
     article_type = ArticleTypeSerializer(many=True, read_only=True)
@@ -53,8 +53,8 @@ class DisorderStudyCountSerializer(serializers.Serializer):
     study_count = serializers.IntegerField()
 
 
-class ResearchRegionStudyCountSerializer(serializers.Serializer):
-    research_regions__name = serializers.CharField()
+class CountryStudyCountSerializer(serializers.Serializer):
+    countries__name = serializers.CharField()
     study_count = serializers.IntegerField()
 
 class BiologicalModalityStudyCountSerializer(serializers.Serializer):

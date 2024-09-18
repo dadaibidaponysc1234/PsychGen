@@ -1,6 +1,6 @@
 from rest_framework import generics
 from ResearchApp.models import Study, Disorder, BiologicalModality, GeneticSourceMaterial, ArticleType, StudyDesign, Country
-from .serializers import StudySerializer,DisorderStudyCountSerializer,ResearchRegionStudyCountSerializer,BiologicalModalityStudyCountSerializer,GeneticSourceMaterialStudyCountSerializer,YearlyStudyCountSerializer,CountrySerializer
+from .serializers import StudySerializer,DisorderStudyCountSerializer,CountryStudyCountSerializer,BiologicalModalityStudyCountSerializer,GeneticSourceMaterialStudyCountSerializer,YearlyStudyCountSerializer,CountrySerializer
 from django.db.models import Count, Q
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -45,7 +45,7 @@ class StudyListView(generics.ListCreateAPIView):
         
         title = self.request.GET.get('title')
         year = self.request.GET.get('year')
-        research_regions = self.request.GET.get('research_regions')
+        countries = self.request.GET.get('research_regions')
         disorder = self.request.GET.get('disorder')
         article_type = self.request.GET.get('article_type')
 
@@ -55,8 +55,8 @@ class StudyListView(generics.ListCreateAPIView):
             queryset = Study.objects.all()
         if disorder:
             queryset = queryset.filter(disorder__disorder_name__icontains=disorder)
-        if research_regions:
-            queryset = queryset.filter(research_regions__name__icontains=research_regions)
+        if countries:
+            queryset = queryset.filter(countries__name__icontains=countries)
         if article_type:
             queryset = queryset.filter(article_type__article_name__icontains=article_type)
         if year:
@@ -139,14 +139,14 @@ class DisorderStudyCountView(APIView):
 class ResearchRegionStudyCountView(APIView):
     def get(self, request):
         # Group by research region and count the number of studies
-        research_region_counts = (
-            Study.objects.values('research_regions__name')
+        country_counts = (
+            Study.objects.values('countries__name')
             .annotate(study_count=Count('id'))
             .order_by('-study_count')
         )
 
         # Serialize the data
-        serializer = ResearchRegionStudyCountSerializer(research_region_counts, many=True)
+        serializer = CountryStudyCountSerializer(country_counts, many=True)
         return Response(serializer.data)
     
 class BiologicalModalityStudyCountView(APIView):
