@@ -65,6 +65,12 @@ class GeneticSourceMaterialStudyCountSerializer(serializers.Serializer):
     genetic_source_materials__material_type = serializers.CharField()
     study_count = serializers.IntegerField()
 
+# class YearlyStudyCountSerializer(serializers.Serializer):
+#     year = serializers.IntegerField()  # Assuming the year is stored as an integer
+#     study_count = serializers.IntegerField()    
+
 class YearlyStudyCountSerializer(serializers.Serializer):
-    year = serializers.IntegerField()  # Assuming the year is stored as an integer
-    study_count = serializers.IntegerField()    
+    year = serializers.IntegerField()
+    study_count = serializers.IntegerField()
+    citation = serializers.IntegerField()  # Total citations per year
+    impact_factor = serializers.FloatField(allow_null=True)  # Average impact factor per year

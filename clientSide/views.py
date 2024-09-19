@@ -1,16 +1,16 @@
 from rest_framework import generics
 from ResearchApp.models import Study, Disorder, BiologicalModality, GeneticSourceMaterial, ArticleType, StudyDesign, Country
 from .serializers import StudySerializer,DisorderStudyCountSerializer,CountryStudyCountSerializer,BiologicalModalityStudyCountSerializer,GeneticSourceMaterialStudyCountSerializer,YearlyStudyCountSerializer,CountrySerializer
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum, Avg
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework import status
+# from django.db.models import Count, Q, Sum, Avg  # Add Sum and Avg here
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 # from django.db.models import
-
 class AutoCompleteSuggestionView(APIView):
     def get(self, request):
         query = request.GET.get('query', '')
@@ -18,12 +18,12 @@ class AutoCompleteSuggestionView(APIView):
         if not query:
             return Response({"error": "No query provided"}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Fetch suggestions based on the partial query. You can modify this logic for other fields.
-        study_suggestions = Study.objects.filter(title__icontains=query).values_list('title', flat=True)[:5]
-        disorder_suggestions = Disorder.objects.filter(disorder_name__icontains=query).values_list('disorder_name', flat=True)[:5]
-        author_suggestions = Study.objects.filter(lead_author__icontains=query).values_list('lead_author', flat=True)[:5]
+        # Fetch suggestions including the ID
+        study_suggestions = Study.objects.filter(title__icontains=query).values('id', 'title')[:5]
+        disorder_suggestions = Disorder.objects.filter(disorder_name__icontains=query).values('id', 'disorder_name')[:5]
+        author_suggestions = Study.objects.filter(lead_author__icontains=query).values('id', 'lead_author')[:5]
 
-        # Combine suggestions for title, disorders, and authors
+        # Combine suggestions for title, disorders, and authors with their IDs
         suggestions = {
             "study_titles": list(study_suggestions),
             "disorders": list(disorder_suggestions),
@@ -31,6 +31,7 @@ class AutoCompleteSuggestionView(APIView):
         }
 
         return Response(suggestions, status=status.HTTP_200_OK)
+
 
 # the pagination class
 class StudyListPagination(PageNumberPagination):
@@ -159,12 +160,7 @@ class BiologicalModalityStudyCountView(APIView):
             .order_by('-study_count')
         )
 
-        # Prepare data for the serializer
-        # data = [
-        #     {'modality_name': item['biological_modalities__modality_name'], 'study_count': item['study_count']}
-        #     for item in biological_modality_counts
-        # ]
-
+        
         # Serialize the data
         serializer = BiologicalModalityStudyCountSerializer(biological_modality_counts, many=True)
         return Response(serializer.data)
@@ -182,33 +178,37 @@ class GeneticSourceMaterialStudyCountView(APIView):
             .order_by('-study_count')
         )
 
-        # Prepare data for the serializer
-        # data = [
-        #     {'material_type': item['genetic_source_materials__material_type'], 'study_count': item['study_count']}
-        #     for item in genetic_source_material_counts
-        # ]
-
-        # Serialize the data
+        
         serializer = GeneticSourceMaterialStudyCountSerializer(genetic_source_material_counts, many=True)
         return Response(serializer.data)
     
 
 class YearlyStudyCountView(APIView):
     def get(self, request):
-        # Annotate the count of studies for each year
-        yearly_study_counts = (
+        # Annotate the count of studies, total citations, and average impact factor for each year
+        yearly_study_data = (
             Study.objects
             .values('year')  # Group by year
-            .annotate(study_count=Count('id'))  # Count the number of studies for each year
-            .order_by('year')  # Order by year, descending
+            .annotate(
+                study_count=Count('id'),  # Count the number of studies for each year
+                total_citations=Sum('citation'),  # Sum of citations for each year
+                average_impact_factor=Avg('impact_factor')  # Average impact factor for each year
+            )
+            .order_by('year')  # Order by year ascending
         )
 
-        # Prepare data for the serializer
+        # Prepare the data for the serializer
         data = [
-            {'year': item['year'], 'study_count': item['study_count']}
-            for item in yearly_study_counts
+            {
+                'year': item['year'],
+                'study_count': item['study_count'],
+                'citation': item['total_citations'],
+                'impact_factor': item['average_impact_factor']
+            }
+            for item in yearly_study_data
         ]
 
         # Serialize the data
         serializer = YearlyStudyCountSerializer(data, many=True)
-        return Response(serializer.data)    
+        
+        return Response(serializer.data, status=status.HTTP_200_OK)
