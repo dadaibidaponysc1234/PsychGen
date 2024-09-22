@@ -6,11 +6,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework import status
-# from django.db.models import Count, Q, Sum, Avg  # Add Sum and Avg here
+from django.http import JsonResponse
+from collections import defaultdict
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 # from django.db.models import
+
 class AutoCompleteSuggestionView(APIView):
     def get(self, request):
         query = request.GET.get('query', '')
@@ -212,3 +214,112 @@ class YearlyStudyCountView(APIView):
         serializer = YearlyStudyCountSerializer(data, many=True)
         
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class CountryCollaborationView(APIView):
+    def get(self, request):
+        try:
+            # Step 1: Retrieve all studies and their associated countries
+            studies = Study.objects.prefetch_related('countries').all()
+            # studies = studies[69:]
+            # print(f'studies: {studies}')
+
+            # Initialize collaboration dictionary
+            country_collaborations = defaultdict(lambda: defaultdict(int))
+            # print(f'studies: {country_collaborations}')
+            for study in studies:
+                # Get all the countries related to this study
+                countries = list(study.countries.values_list('name', flat=True))
+                # countries = countries[1:]
+                print(f'studies: {countries}')
+                if countries:
+                    # Process the countries for collaboration tracking
+                    for i, country1 in enumerate(countries):
+                        for country2 in countries[i+1:]:
+                            # Increment collaboration count between countries
+                            country_collaborations[country1][country2] += 1
+                            country_collaborations[country2][country1] += 1
+                        country_collaborations[country1][country1] += 1
+                        country_collaborations[country1][country1] += 1
+                        # print(f'studies: {countries}--------> country_collaborations:{country_collaborations}')
+                    # break
+            # Step 2: Generate a list of unique countries
+            all_countries = sorted(country_collaborations.keys())
+
+            # Step 3: Create a matrix of collaborations
+            matrix = []
+            for country1 in all_countries:
+                row = []
+                for country2 in all_countries:
+                    row.append(country_collaborations[country1].get(country2, 0))
+                matrix.append(row)
+
+            # Step 4: Prepare the response
+            response_data = {
+                'matrix': matrix,
+                'countries': all_countries
+            }
+
+            return Response(response_data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# from collections import defaultdict
+# # from rest_framework.views import APIView
+# # from django.http import JsonResponse
+# # from clientSide.models import Study
+
+# class CountryCollaborationView(APIView):
+#     def get(self, request, *args, **kwargs):
+#         try:
+#             # Retrieve all studies from the database
+#             study_details = Study.objects.all()
+
+#             # Initialize a set for all countries and a dictionary for country co-occurrences
+#             all_countries = set()
+#             co_occurrences = defaultdict(lambda: defaultdict(int))
+
+#             for study in study_details:
+#                 # Get the list of countries related to this study
+#                 countries = study.countries.all()
+
+#                 # Extract the country names and clean them if necessary
+#                 country_names = [country.name.strip() for country in countries]
+
+#                 # Update the set of all countries
+#                 all_countries.update(country_names)
+
+#                 # Count co-occurrences between countries
+#                 for i in range(len(country_names)):
+#                     for j in range(i + 1, len(country_names)):
+#                         country_a = country_names[i]
+#                         country_b = country_names[j]
+#                         co_occurrences[country_a][country_b] += 1
+#                         co_occurrences[country_b][country_a] += 1  # Symmetric co-occurrence
+
+#             # Convert all_countries to a sorted list
+#             all_countries = sorted(list(all_countries))
+
+#             # Initialize the connection matrix (n x n) for the chord diagram
+#             connection_matrix = []
+#             for country_a in all_countries:
+#                 row = []
+#                 for country_b in all_countries:
+#                     row.append(co_occurrences[country_a].get(country_b, 0))
+#                 connection_matrix.append(row)
+
+#             # Prepare the response data
+#             response_data = {
+#                 'matrix': connection_matrix,
+#                 'countries': all_countries
+#             }
+
+#             # Return the response as JSON
+#             return JsonResponse(response_data, safe=False)
+
+#         except Exception as e:
+#             # Return an error response if something goes wrong
+#             return JsonResponse({
+#                 'status': 'error',
+#                 'message': str(e)
+#             }, status=500)
