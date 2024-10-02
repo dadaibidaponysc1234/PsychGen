@@ -41,7 +41,7 @@ class Study(models.Model):
     title = models.TextField(null=False, blank=False)
     abstract = models.TextField(null=False, blank=False)
     year = models.IntegerField(null=True, blank=True)
-    DOI = models.CharField(max_length=100, blank=False, default='')  # Added unique constraint
+    DOI = models.CharField(max_length=100, blank=True, default='')  # Added unique constraint
     journal_name = models.CharField(max_length=255, null=True, blank=True)
 
     countries = models.ManyToManyField(Country, blank=True)
@@ -62,7 +62,7 @@ class Study(models.Model):
     male_female_split = models.CharField(max_length=400, null=True, blank=True)
     biological_modalities = models.ManyToManyField(BiologicalModality, blank=True)
     citation = models.IntegerField(default=0)
-    keyword = models.CharField(max_length=500, null=True, blank=True)
+    keyword = models.CharField(max_length=1000, null=True, blank=True)
     date = models.CharField(max_length=100, null=True, blank=True)
     pages = models.CharField(max_length=100, null=True, blank=True)
     issue = models.CharField(max_length=10, null=True, blank=True)

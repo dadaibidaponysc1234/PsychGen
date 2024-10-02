@@ -53,7 +53,7 @@ class StudyListView(generics.ListCreateAPIView):
         article_type = self.request.GET.get('article_type')
 
         if title:
-            queryset = queryset.filter(Q(title__icontains=title) | Q(lead_author__icontains=title))
+            queryset = queryset.filter(Q(title__icontains=title) | Q(abstract__icontains=title))
         else:
             queryset = Study.objects.all()
         if disorder:
@@ -66,6 +66,51 @@ class StudyListView(generics.ListCreateAPIView):
             queryset = queryset.filter(year=year)
 
         return queryset
+
+
+# class StudyListView(generics.ListCreateAPIView):
+#     serializer_class = StudySerializer
+#     pagination_class = StudyListPagination
+
+#     def get_queryset(self):
+#         queryset = Study.objects.all()
+
+#         # Get filter parameters from the request
+#         title = self.request.GET.get('title')
+#         year = self.request.GET.get('year')
+#         countries = self.request.GET.get('research_regions')
+#         disorder = self.request.GET.get('disorder')
+#         article_type = self.request.GET.get('article_type')
+
+#         # Apply search filters
+#         if title:
+#             queryset = queryset.filter(Q(title__icontains=title) | Q(abstract__icontains=title))
+#         if disorder:
+#             queryset = queryset.filter(disorder__disorder_name__icontains=disorder)
+#         if countries:
+#             queryset = queryset.filter(countries__name__icontains=countries)
+#         if article_type:
+#             queryset = queryset.filter(article_type__article_name__icontains=article_type)
+#         if year:
+#             queryset = queryset.filter(year=year)
+
+#         return queryset
+
+#     def list(self, request, *args, **kwargs):
+#         queryset = self.get_queryset()
+
+#         # Check if the 'yearly_count' parameter is set to true
+#         yearly_count = self.request.GET.get('yearly_count')
+
+#         if yearly_count:
+#             # Annotate and group by year, and count the number of studies per year
+#             year_count = queryset.values('year').annotate(count=Count('id')).order_by('year')
+#             # print(year_count)
+#             return Response(year_count)
+
+#         # Otherwise, proceed with the normal listing of studies
+#         return super().list(request, *args, **kwargs)
+
 
 class StudyDeleteView(generics.DestroyAPIView):
     queryset = Study.objects.all()
@@ -91,13 +136,14 @@ class StudyBulkDeleteView(APIView):
         studies.delete()
         return Response({"message": "Studies deleted successfully"}, status=status.HTTP_200_OK)
 #function for the recommender 
+
 def recommend_similar_studies(study, top_n=5):
     # Get all studies except the current one
     all_studies = Study.objects.exclude(id=study.id)
     
     # Combine title and findings/conclusions to form the content
-    study_content = [study.title + " " + (study.findings_conclusions or "")] + \
-                    [s.title + " " + (s.findings_conclusions or "") for s in all_studies]
+    study_content = [study.title + " " + (study.findings_conclusions or "")+(study.abstract or "")] + \
+                    [s.title + " " + (s.findings_conclusions or "") + (s.abstract or "") for s in all_studies]
     
     # Calculate TF-IDF and cosine similarity
     tfidf = TfidfVectorizer(stop_words='english').fit_transform(study_content)
