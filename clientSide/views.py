@@ -39,52 +39,23 @@ class AutoCompleteSuggestionView(APIView):
 class StudyListPagination(PageNumberPagination):
     page_size=10
 
-class StudyListView(generics.ListCreateAPIView):
-    serializer_class = StudySerializer
-    pagination_class = StudyListPagination
-
-    def get_queryset(self):
-        queryset = Study.objects.all()
-        
-        title = self.request.GET.get('title')
-        year = self.request.GET.get('year')
-        countries = self.request.GET.get('research_regions')
-        disorder = self.request.GET.get('disorder')
-        article_type = self.request.GET.get('article_type')
-
-        if title:
-            queryset = queryset.filter(Q(title__icontains=title) | Q(abstract__icontains=title))
-        else:
-            queryset = Study.objects.all()
-        if disorder:
-            queryset = queryset.filter(disorder__disorder_name__icontains=disorder)
-        if countries:
-            queryset = queryset.filter(countries__name__icontains=countries)
-        if article_type:
-            queryset = queryset.filter(article_type__article_name__icontains=article_type)
-        if year:
-            queryset = queryset.filter(year=year)
-
-        return queryset
-
-
 # class StudyListView(generics.ListCreateAPIView):
 #     serializer_class = StudySerializer
 #     pagination_class = StudyListPagination
 
 #     def get_queryset(self):
 #         queryset = Study.objects.all()
-
-#         # Get filter parameters from the request
+        
 #         title = self.request.GET.get('title')
 #         year = self.request.GET.get('year')
 #         countries = self.request.GET.get('research_regions')
 #         disorder = self.request.GET.get('disorder')
 #         article_type = self.request.GET.get('article_type')
 
-#         # Apply search filters
 #         if title:
 #             queryset = queryset.filter(Q(title__icontains=title) | Q(abstract__icontains=title))
+#         else:
+#             queryset = Study.objects.all()
 #         if disorder:
 #             queryset = queryset.filter(disorder__disorder_name__icontains=disorder)
 #         if countries:
@@ -96,20 +67,54 @@ class StudyListView(generics.ListCreateAPIView):
 
 #         return queryset
 
-#     def list(self, request, *args, **kwargs):
-#         queryset = self.get_queryset()
 
-#         # Check if the 'yearly_count' parameter is set to true
-#         yearly_count = self.request.GET.get('yearly_count')
+class StudyListView(generics.ListCreateAPIView):
+    serializer_class = StudySerializer
+    pagination_class = StudyListPagination
 
-#         if yearly_count:
-#             # Annotate and group by year, and count the number of studies per year
-#             year_count = queryset.values('year').annotate(count=Count('id')).order_by('year')
-#             # print(year_count)
-#             return Response(year_count)
+    def get_queryset(self):
+        queryset = Study.objects.all()
 
-#         # Otherwise, proceed with the normal listing of studies
-#         return super().list(request, *args, **kwargs)
+        # Filter parameters
+        title = self.request.GET.get('title')
+        year = self.request.GET.get('year')
+        countries = self.request.GET.get('research_regions')
+        disorder = self.request.GET.get('disorder')
+        article_type = self.request.GET.get('article_type')
+
+        # Title filtering
+        if title:
+            queryset = queryset.filter(Q(title__icontains=title) | Q(abstract__icontains=title))
+
+        # Other filters
+        if disorder:
+            queryset = queryset.filter(disorder__disorder_name__icontains=disorder)
+        if countries:
+            queryset = queryset.filter(countries__name__icontains=countries)
+        if article_type:
+            queryset = queryset.filter(article_type__article_name__icontains=article_type)
+        if year:
+            queryset = queryset.filter(year=year)
+
+        return queryset
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+
+        # Count studies per disorder after filtering
+        disorder_counts = (
+            queryset.values('disorder__disorder_name')  # Use disorder name
+            .annotate(study_count=Count('id'))  # Count studies per disorder
+            .order_by('-study_count')
+        )
+
+        # Generate a response with the filtered studies and the disorder count
+        response = super().list(request, *args, **kwargs)  # Get the serialized study list response
+        
+        # Add disorder counts to the response data
+        response.data['disorder_study_counts'] = disorder_counts
+
+        return Response(response.data)
 
 
 class StudyDeleteView(generics.DestroyAPIView):
@@ -185,11 +190,38 @@ class DisorderStudyCountView(APIView):
         serializer = DisorderStudyCountSerializer(disorder_counts, many=True)
         return Response(serializer.data)
         
+# class ResearchRegionStudyCountView(APIView):
+#     def get(self, request):
+#         # Group by research region and count the number of studies
+#         country_counts = (
+#             Study.objects.values('countries__name')
+#             .annotate(study_count=Count('id'))
+#             .order_by('-study_count')
+#         )
+
+#         # Serialize the data
+#         serializer = CountryStudyCountSerializer(country_counts, many=True)
+#         return Response(serializer.data)
+AFRICAN_COUNTRIES = [
+    "ALGERIA", "ANGOLA", "BENIN", "BOTSWANA", "BURKINA FASO", "BURUNDI", "CABO VERDE", "CAMEROON",
+    "CENTRAL AFRICAN REPUBLIC", "CHAD", "COMOROS", "DEMOCRATIC REPUBLIC OF THE CONGO", "REPUBLIC OF THE CONGO",
+    "DJIBOUTI", "EGYPT", "EQUATORIAL GUINEA", "ERITREA", "ESWATINI", "ETHIOPIA", "GABON", "GAMBIA", "GHANA", "GUINEA",
+    "GUINEA-BISSAU", "IVORY COAST", "KENYA", "LESOTHO", "LIBERIA", "LIBYA", "MADAGASCAR", "MALAWI", "MALI",
+    "MAURITANIA", "MAURITIUS", "MOROCCO", "MOZAMBIQUE", "NAMIBIA", "NIGER", "NIGERIA", "RWANDA", "SÃO TOMÉ AND PRÍNCIPE",
+    "SENEGAL", "SEYCHELLES", "SIERRA LEONE", "SOMALIA", "SOUTH AFRICA", "SOUTH SUDAN", "SUDAN", "TANZANIA", "TOGO",
+    "TUNISIA", "UGANDA", "ZAMBIA", "ZIMBABWE"
+]
+
 class ResearchRegionStudyCountView(APIView):
     def get(self, request):
-        # Group by research region and count the number of studies
+        # Filter studies by predefined African countries
+        african_countries = Country.objects.filter(name__in=AFRICAN_COUNTRIES)
+        print(african_countries)
+
+        # Group by African countries and count the number of studies
         country_counts = (
-            Study.objects.values('countries__name')
+            Study.objects.filter(countries__in=african_countries)  # Filter studies for African countries
+            .values('countries__name')
             .annotate(study_count=Count('id'))
             .order_by('-study_count')
         )
@@ -197,6 +229,7 @@ class ResearchRegionStudyCountView(APIView):
         # Serialize the data
         serializer = CountryStudyCountSerializer(country_counts, many=True)
         return Response(serializer.data)
+
     
 class BiologicalModalityStudyCountView(APIView):
     def get(self, request):
@@ -277,7 +310,7 @@ class CountryCollaborationView(APIView):
                 # Get all the countries related to this study
                 countries = list(study.countries.values_list('name', flat=True))
                 # countries = countries[1:]
-                print(f'studies: {countries}')
+                # print(f'studies: {countries}')
                 if countries:
                     # Process the countries for collaboration tracking
                     for i, country1 in enumerate(countries):
