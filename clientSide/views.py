@@ -25,14 +25,15 @@ class AutoCompleteSuggestionView(APIView):
             return Response({"error": "No query provided"}, status=status.HTTP_400_BAD_REQUEST)
         
         # Fetch suggestions including the ID
-        study_suggestions = Study.objects.filter(title__icontains=query).values('title')[:5]
-        disorder_suggestions = Disorder.objects.filter(disorder_name__icontains=query).values('disorder_name')[:5]
-        # author_suggestions = Study.objects.filter(lead_author__icontains=query).values('id', 'lead_author')[:5]
+        study_suggestions = Study.objects.filter(title__icontains=query).values('id','title')[:5]
+        disorder_suggestions = Disorder.objects.filter(disorder_name__icontains=query).values('id','disorder_name')[:5]
+        author_suggestions = Study.objects.filter(lead_author__icontains=query).values('id', 'lead_author')[:5]
 
         # Combine suggestions for title, disorders, and authors with their IDs
         suggestions = {
             "study_titles": list(study_suggestions),
             "disorders": list(disorder_suggestions),
+            "author":list(author_suggestions)
         }
 
         return Response(suggestions, status=status.HTTP_200_OK)
