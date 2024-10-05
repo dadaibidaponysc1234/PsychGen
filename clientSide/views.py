@@ -1,3 +1,4 @@
+import csv
 from rest_framework import generics
 from ResearchApp.models import Study, Disorder, BiologicalModality, GeneticSourceMaterial, ArticleType, StudyDesign, Country
 from .serializers import StudySerializer,DisorderStudyCountSerializer,CountryStudyCountSerializer,BiologicalModalityStudyCountSerializer,GeneticSourceMaterialStudyCountSerializer,YearlyStudyCountSerializer,CountrySerializer
@@ -8,10 +9,13 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework import status
 from django.http import JsonResponse
 from collections import defaultdict
+from django.http import HttpResponse
+
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 # from django.db.models import
+
 
 class AutoCompleteSuggestionView(APIView):
     def get(self, request):
@@ -21,15 +25,14 @@ class AutoCompleteSuggestionView(APIView):
             return Response({"error": "No query provided"}, status=status.HTTP_400_BAD_REQUEST)
         
         # Fetch suggestions including the ID
-        study_suggestions = Study.objects.filter(title__icontains=query).values('id', 'title')[:5]
-        disorder_suggestions = Disorder.objects.filter(disorder_name__icontains=query).values('id', 'disorder_name')[:5]
-        author_suggestions = Study.objects.filter(lead_author__icontains=query).values('id', 'lead_author')[:5]
+        study_suggestions = Study.objects.filter(title__icontains=query).values('title')[:5]
+        disorder_suggestions = Disorder.objects.filter(disorder_name__icontains=query).values('disorder_name')[:5]
+        # author_suggestions = Study.objects.filter(lead_author__icontains=query).values('id', 'lead_author')[:5]
 
         # Combine suggestions for title, disorders, and authors with their IDs
         suggestions = {
             "study_titles": list(study_suggestions),
             "disorders": list(disorder_suggestions),
-            "authors": list(author_suggestions),
         }
 
         return Response(suggestions, status=status.HTTP_200_OK)
@@ -39,34 +42,31 @@ class AutoCompleteSuggestionView(APIView):
 class StudyListPagination(PageNumberPagination):
     page_size=10
 
-# class StudyListView(generics.ListCreateAPIView):
-#     serializer_class = StudySerializer
-#     pagination_class = StudyListPagination
 
-#     def get_queryset(self):
-#         queryset = Study.objects.all()
-        
-#         title = self.request.GET.get('title')
-#         year = self.request.GET.get('year')
-#         countries = self.request.GET.get('research_regions')
-#         disorder = self.request.GET.get('disorder')
-#         article_type = self.request.GET.get('article_type')
+class CountryListView(APIView):
+    def get(self, request, *args, **kwargs):
+        countries = Country.objects.all().values('id', 'name')
+        return Response(countries)
 
-#         if title:
-#             queryset = queryset.filter(Q(title__icontains=title) | Q(abstract__icontains=title))
-#         else:
-#             queryset = Study.objects.all()
-#         if disorder:
-#             queryset = queryset.filter(disorder__disorder_name__icontains=disorder)
-#         if countries:
-#             queryset = queryset.filter(countries__name__icontains=countries)
-#         if article_type:
-#             queryset = queryset.filter(article_type__article_name__icontains=article_type)
-#         if year:
-#             queryset = queryset.filter(year=year)
+class DisorderListView(APIView):
+    def get(self, request, *args, **kwargs):
+        disorders = Disorder.objects.all().values('id', 'disorder_name')
+        return Response(disorders)
 
-#         return queryset
+class ArticleTypeListView(APIView):
+    def get(self, request, *args, **kwargs):
+        article_types = ArticleType.objects.all().values('id', 'article_name')
+        return Response(article_types)
 
+class BiologicalModalityListView(APIView):
+    def get(self, request, *args, **kwargs):
+        modalities = BiologicalModality.objects.all().values('id', 'modality_name')
+        return Response(modalities)
+
+class GeneticSourceMaterialListView(APIView):
+    def get(self, request, *args, **kwargs):
+        materials = GeneticSourceMaterial.objects.all().values('id', 'material_type')
+        return Response(materials)
 
 class StudyListView(generics.ListCreateAPIView):
     serializer_class = StudySerializer
@@ -75,31 +75,86 @@ class StudyListView(generics.ListCreateAPIView):
     def get_queryset(self):
         queryset = Study.objects.all()
 
-        # Filter parameters
+        # Get filter parameters from request
         title = self.request.GET.get('title')
+        journal_name = self.request.GET.get('journal_name')
+        keyword = self.request.GET.get('keyword')
+        impact_factor_min = self.request.GET.get('impact_factor_min')  # Range filter for impact factor
+        impact_factor_max = self.request.GET.get('impact_factor_max')
+
+        year_min = self.request.GET.get('year_min')
+        year_max = self.request.GET.get('year_max')
+       
         year = self.request.GET.get('year')
-        countries = self.request.GET.get('research_regions')
-        disorder = self.request.GET.get('disorder')
-        article_type = self.request.GET.get('article_type')
+        countries = self.request.GET.getlist('research_regions')  # Expect multiple countries
+        disorder = self.request.GET.getlist('disorder')  # Expect multiple disorders
+        article_type = self.request.GET.getlist('article_type')  # Expect multiple article types
+        biological_modalities = self.request.GET.getlist('biological_modalities')  # Expect multiple modalities
+        genetic_source_materials = self.request.GET.getlist('genetic_source_materials')  # Multiple materials
+        
+        # Build Q object to search across all fields
+        search_query = Q()
 
-        # Title filtering
+        # Title and abstract filtering (searches both title and abstract)
         if title:
-            queryset = queryset.filter(Q(title__icontains=title) | Q(abstract__icontains=title))
+            search_query &= (Q(title__icontains=title) | Q(abstract__icontains=title))
 
-        # Other filters
-        if disorder:
-            queryset = queryset.filter(disorder__disorder_name__icontains=disorder)
-        if countries:
-            queryset = queryset.filter(countries__name__icontains=countries)
-        if article_type:
-            queryset = queryset.filter(article_type__article_name__icontains=article_type)
+        # Filter by year
         if year:
-            queryset = queryset.filter(year=year)
+            search_query &= Q(year=year)
+
+        # Filter by disorder name (ManyToManyField)
+        if disorder:
+            search_query &= Q(disorder__disorder_name__in=disorder)
+
+        # Filter by article type (ManyToManyField)
+        if article_type:
+            search_query &= Q(article_type__article_name__in=article_type)
+
+        # Filter by country name (ManyToManyField)
+        if countries:
+            search_query &= Q(countries__name__in=countries)
+        
+        # Filter by journal name
+        if journal_name:
+            search_query &= Q(journal_name__icontains=journal_name)
+
+        # Filter by keyword
+        if keyword:
+            search_query &= Q(keyword__icontains=keyword)
+
+        # Filter by impact factor range
+        if impact_factor_min:
+            search_query &= Q(impact_factor__gte=impact_factor_min)
+        if impact_factor_max:
+            search_query &= Q(impact_factor__lte=impact_factor_max)
+        
+        # Filter by impact factor range
+        if year_min:
+            search_query &= Q(year__gte=year_min)
+        if year_max:
+            search_query &= Q(year__lte=year_max)
+        
+        # Filter by biological modalities (ManyToManyField)
+        if biological_modalities:
+            search_query &= Q(biological_modalities__modality_name__in=biological_modalities)
+
+        # Filter by genetic source materials (ManyToManyField)
+        if genetic_source_materials:
+            search_query &= Q(genetic_source_materials__material_type__in=genetic_source_materials)
+
+        # Apply the search query to the queryset
+        queryset = queryset.filter(search_query).distinct()
 
         return queryset
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
+
+        #check if export to CSV is requested 
+        export_format = request.GET.get('export', None)
+        if export_format == 'csv':
+            return self.export_to_csv(queryset)
 
         # Count studies per disorder after filtering
         disorder_counts = (
@@ -108,13 +163,49 @@ class StudyListView(generics.ListCreateAPIView):
             .order_by('-study_count')
         )
 
+        # Count studies per year after filtering
+        yearly_counts = (
+            queryset.values('year')  # Group by year
+            .annotate(study_count=Count('id'))  # Count studies per year
+            .order_by('year')  # Optional: Order by year (ascending)
+        )
         # Generate a response with the filtered studies and the disorder count
         response = super().list(request, *args, **kwargs)  # Get the serialized study list response
-        
+
         # Add disorder counts to the response data
         response.data['disorder_study_counts'] = disorder_counts
+        response.data['yearly_study_counts'] = yearly_counts
 
         return Response(response.data)
+
+    def export_to_csv(self, queryset):
+        """
+        Exports the filtered queryset to CSV format.
+        """
+        # Define the fields to include in the CSV
+        fields = ['pmid','title', 'journal_name', 'year', 'impact_factor', 'countries', 'disorder']
+
+        # Create the HttpResponse object with CSV header
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="studies.csv"'
+
+        writer = csv.writer(response)
+        # Write header
+        writer.writerow(fields)
+
+        # Write data rows
+        for study in queryset:
+            writer.writerow([
+                study.pmid,
+                study.title,
+                study.journal_name,
+                study.year,
+                study.impact_factor,
+                ', '.join([country.name for country in study.countries.all()]),  # Convert ManyToManyField to string
+                ', '.join([disorder.disorder_name for disorder in study.disorder.all()]),  # Convert ManyToManyField to string
+            ])
+
+        return response
 
 
 class StudyDeleteView(generics.DestroyAPIView):
@@ -190,18 +281,7 @@ class DisorderStudyCountView(APIView):
         serializer = DisorderStudyCountSerializer(disorder_counts, many=True)
         return Response(serializer.data)
         
-# class ResearchRegionStudyCountView(APIView):
-#     def get(self, request):
-#         # Group by research region and count the number of studies
-#         country_counts = (
-#             Study.objects.values('countries__name')
-#             .annotate(study_count=Count('id'))
-#             .order_by('-study_count')
-#         )
 
-#         # Serialize the data
-#         serializer = CountryStudyCountSerializer(country_counts, many=True)
-#         return Response(serializer.data)
 AFRICAN_COUNTRIES = [
     "ALGERIA", "ANGOLA", "BENIN", "BOTSWANA", "BURKINA FASO", "BURUNDI", "CABO VERDE", "CAMEROON",
     "CENTRAL AFRICAN REPUBLIC", "CHAD", "COMOROS", "DEMOCRATIC REPUBLIC OF THE CONGO", "REPUBLIC OF THE CONGO",
@@ -342,63 +422,3 @@ class CountryCollaborationView(APIView):
             return Response(response_data, status=status.HTTP_200_OK)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-# from collections import defaultdict
-# # from rest_framework.views import APIView
-# # from django.http import JsonResponse
-# # from clientSide.models import Study
-
-# class CountryCollaborationView(APIView):
-#     def get(self, request, *args, **kwargs):
-#         try:
-#             # Retrieve all studies from the database
-#             study_details = Study.objects.all()
-
-#             # Initialize a set for all countries and a dictionary for country co-occurrences
-#             all_countries = set()
-#             co_occurrences = defaultdict(lambda: defaultdict(int))
-
-#             for study in study_details:
-#                 # Get the list of countries related to this study
-#                 countries = study.countries.all()
-
-#                 # Extract the country names and clean them if necessary
-#                 country_names = [country.name.strip() for country in countries]
-
-#                 # Update the set of all countries
-#                 all_countries.update(country_names)
-
-#                 # Count co-occurrences between countries
-#                 for i in range(len(country_names)):
-#                     for j in range(i + 1, len(country_names)):
-#                         country_a = country_names[i]
-#                         country_b = country_names[j]
-#                         co_occurrences[country_a][country_b] += 1
-#                         co_occurrences[country_b][country_a] += 1  # Symmetric co-occurrence
-
-#             # Convert all_countries to a sorted list
-#             all_countries = sorted(list(all_countries))
-
-#             # Initialize the connection matrix (n x n) for the chord diagram
-#             connection_matrix = []
-#             for country_a in all_countries:
-#                 row = []
-#                 for country_b in all_countries:
-#                     row.append(co_occurrences[country_a].get(country_b, 0))
-#                 connection_matrix.append(row)
-
-#             # Prepare the response data
-#             response_data = {
-#                 'matrix': connection_matrix,
-#                 'countries': all_countries
-#             }
-
-#             # Return the response as JSON
-#             return JsonResponse(response_data, safe=False)
-
-#         except Exception as e:
-#             # Return an error response if something goes wrong
-#             return JsonResponse({
-#                 'status': 'error',
-#                 'message': str(e)
-#             }, status=500)
