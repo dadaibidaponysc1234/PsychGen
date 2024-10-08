@@ -17,6 +17,16 @@ from sklearn.metrics.pairwise import cosine_similarity
 # from django.db.models import
 
 
+AFRICAN_COUNTRIES = [
+    "ALGERIA", "ANGOLA", "BENIN", "BOTSWANA", "BURKINA FASO", "BURUNDI", "CABO VERDE", "CAMEROON",
+    "CENTRAL AFRICAN REPUBLIC", "CHAD", "COMOROS", "DEMOCRATIC REPUBLIC OF THE CONGO", "REPUBLIC OF THE CONGO",
+    "DJIBOUTI", "EGYPT", "EQUATORIAL GUINEA", "ERITREA", "ESWATINI", "ETHIOPIA", "GABON", "GAMBIA", "GHANA", "GUINEA",
+    "GUINEA-BISSAU", "IVORY COAST", "KENYA", "LESOTHO", "LIBERIA", "LIBYA", "MADAGASCAR", "MALAWI", "MALI",
+    "MAURITANIA", "MAURITIUS", "MOROCCO", "MOZAMBIQUE", "NAMIBIA", "NIGER", "NIGERIA", "RWANDA", "SÃO TOMÉ AND PRÍNCIPE",
+    "SENEGAL", "SEYCHELLES", "SIERRA LEONE", "SOMALIA", "SOUTH AFRICA", "SOUTH SUDAN", "SUDAN", "TANZANIA", "TOGO",
+    "TUNISIA", "UGANDA", "ZAMBIA", "ZIMBABWE"
+]
+
 class AutoCompleteSuggestionView(APIView):
     def get(self, request):
         query = request.GET.get('query', '')
@@ -167,16 +177,84 @@ class StudyListView(generics.ListCreateAPIView):
         # Count studies per year after filtering
         yearly_counts = (
             queryset.values('year')  # Group by year
-            .annotate(study_count=Count('id'))  # Count studies per year
+            .annotate(study_count=Count('id'),
+                    total_citations=Sum('citation'),
+                    average_impact_factor=Avg('impact_factor'))  # Count studies per year
             .order_by('year')  # Optional: Order by year (ascending)
         )
+
+        african_countries = Country.objects.filter(name__in=AFRICAN_COUNTRIES)
+        african_study_counts = (
+            queryset.filter(countries__in=african_countries)
+            .values('countries__name')
+            .annotate(study_count=Count('id'))
+            .order_by('-study_count')
+        )
+
+        # Count studies for each biological modality
+        biological_modality_counts = (
+            queryset.values('biological_modalities__modality_name')
+            .annotate(study_count=Count('id'))
+            .order_by('-study_count')
+        )
+
+         # Count studies for each genetic source material
+        genetic_source_material_counts = (
+            queryset.values('genetic_source_materials__material_type')
+            .annotate(study_count=Count('id'))
+            .order_by('-study_count')
+        )
+
+        # ---- Country Collaboration Logic ---- #
+        try:
+            # Step 1: Retrieve all filtered studies and their associated countries
+            studies = queryset.prefetch_related('countries').all()
+
+            # Initialize collaboration dictionary
+            country_collaborations = defaultdict(lambda: defaultdict(int))
+
+            for study in studies:
+                # Get all the countries related to this study
+                countries = list(study.countries.values_list('name', flat=True))
+                if countries:
+                    # Process the countries for collaboration tracking
+                    for i, country1 in enumerate(countries):
+                        for country2 in countries[i+1:]:
+                            # Increment collaboration count between countries
+                            country_collaborations[country1][country2] += 1
+                            country_collaborations[country2][country1] += 1
+                        country_collaborations[country1][country1] += 1
+
+            # Step 2: Generate a list of unique countries
+            all_countries = sorted(country_collaborations.keys())
+
+            # Step 3: Create a matrix of collaborations
+            matrix = []
+            for country1 in all_countries:
+                row = []
+                for country2 in all_countries:
+                    row.append(country_collaborations[country1].get(country2, 0))
+                matrix.append(row)
+
+            # Prepare the collaboration response data
+            collaboration_data = {
+                'matrix': matrix,
+                'countries': all_countries
+            }
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         # Generate a response with the filtered studies and the disorder count
         response = super().list(request, *args, **kwargs)  # Get the serialized study list response
 
         # Add disorder counts to the response data
         response.data['disorder_study_counts'] = disorder_counts
         response.data['yearly_study_counts'] = yearly_counts
-
+        response.data['african_study_counts'] = african_study_counts
+        response.data['biological_modality_study_counts'] = biological_modality_counts
+        response.data['genetic_source_material_study_counts'] = genetic_source_material_counts
+        response.data['collaboration_data'] = collaboration_data
         return Response(response.data)
 
     def export_to_csv(self, queryset):
@@ -283,15 +361,7 @@ class DisorderStudyCountView(APIView):
         return Response(serializer.data)
         
 
-AFRICAN_COUNTRIES = [
-    "ALGERIA", "ANGOLA", "BENIN", "BOTSWANA", "BURKINA FASO", "BURUNDI", "CABO VERDE", "CAMEROON",
-    "CENTRAL AFRICAN REPUBLIC", "CHAD", "COMOROS", "DEMOCRATIC REPUBLIC OF THE CONGO", "REPUBLIC OF THE CONGO",
-    "DJIBOUTI", "EGYPT", "EQUATORIAL GUINEA", "ERITREA", "ESWATINI", "ETHIOPIA", "GABON", "GAMBIA", "GHANA", "GUINEA",
-    "GUINEA-BISSAU", "IVORY COAST", "KENYA", "LESOTHO", "LIBERIA", "LIBYA", "MADAGASCAR", "MALAWI", "MALI",
-    "MAURITANIA", "MAURITIUS", "MOROCCO", "MOZAMBIQUE", "NAMIBIA", "NIGER", "NIGERIA", "RWANDA", "SÃO TOMÉ AND PRÍNCIPE",
-    "SENEGAL", "SEYCHELLES", "SIERRA LEONE", "SOMALIA", "SOUTH AFRICA", "SOUTH SUDAN", "SUDAN", "TANZANIA", "TOGO",
-    "TUNISIA", "UGANDA", "ZAMBIA", "ZIMBABWE"
-]
+
 
 class ResearchRegionStudyCountView(APIView):
     def get(self, request):
