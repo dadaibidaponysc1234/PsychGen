@@ -263,7 +263,7 @@ class StudyListView(generics.ListCreateAPIView):
         # Define the fields to include in the CSV
         fields = [
             'pmid','lead_author', 'title', 'journal_name', 'year', 'impact_factor', 'countries', 'disorder', 
-            'study_design', 'article_type', 'biological_modalities', 'genetic_source_materials'
+            'article_type', 'biological_modalities', 'genetic_source_materials'
         ]
 
         # Create the HttpResponse object with CSV header
@@ -285,7 +285,7 @@ class StudyListView(generics.ListCreateAPIView):
                 study.impact_factor,
                 ', '.join([country.name for country in study.countries.all()]),  # Convert ManyToManyField to string
                 ', '.join([disorder.disorder_name for disorder in study.disorder.all()]),  # Convert ManyToManyField to string
-                study.study_design.design_name if study.study_design else 'N/A',  # ForeignKey (optional)
+                # study.study_design.design_name if study.study_design else 'N/A',  # ForeignKey (optional)
                 ', '.join([article.article_name for article in study.article_type.all()]),  # Convert ManyToManyField to string
                 ', '.join([modality.modality_name for modality in study.biological_modalities.all()]),  # Convert ManyToManyField to string
                 ', '.join([material.material_type for material in study.genetic_source_materials.all()])  # Convert ManyToManyField to string
