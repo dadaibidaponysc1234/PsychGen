@@ -291,36 +291,7 @@ class StudyListView(generics.ListCreateAPIView):
                 ', '.join([material.material_type for material in study.genetic_source_materials.all()])  # Convert ManyToManyField to string
             ])
 
-        return response
-
-    # def export_to_csv(self, queryset):
-    #     """
-    #     Exports the filtered queryset to CSV format.
-    #     """
-    #     # Define the fields to include in the CSV
-    #     fields = ['pmid','title', 'journal_name', 'year', 'impact_factor', 'countries', 'disorder']
-
-    #     # Create the HttpResponse object with CSV header
-    #     response = HttpResponse(content_type='text/csv')
-    #     response['Content-Disposition'] = 'attachment; filename="studies.csv"'
-
-    #     writer = csv.writer(response)
-    #     # Write header
-    #     writer.writerow(fields)
-
-    #     # Write data rows
-    #     for study in queryset:
-    #         writer.writerow([
-    #             study.pmid,
-    #             study.title,
-    #             study.journal_name,
-    #             study.year,
-    #             study.impact_factor,
-    #             ', '.join([country.name for country in study.countries.all()]),  # Convert ManyToManyField to string
-    #             ', '.join([disorder.disorder_name for disorder in study.disorder.all()]),  # Convert ManyToManyField to string
-    #         ])
-
-    #     return response
+        return response    
 
 
 class StudyDeleteView(generics.DestroyAPIView):
