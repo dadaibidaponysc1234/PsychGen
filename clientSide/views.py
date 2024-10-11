@@ -10,7 +10,7 @@ from rest_framework import status
 from django.http import JsonResponse
 from collections import defaultdict
 from django.http import HttpResponse
-
+from collections import Counter
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -536,3 +536,28 @@ class TopFiveDisordersYearlyView(APIView):
         # Step 4: Return the response
         return Response(result)
 
+
+class WordCloudView(APIView):
+    def get(self, request):
+        # Step 1: Get all keywords from studies
+        keywords = Study.objects.values_list('keyword', flat=True)
+
+        # Step 2: Split each keyword string into words and count occurrences
+        word_counter = Counter()
+        for keyword_string in keywords:
+            if keyword_string:  # Check if the keyword string is not empty
+                # Replace full stops, split by ';', strip whitespace, and convert to sentence case
+                words = [
+                    word.strip().replace('.', '').capitalize()  # Remove full stops and convert to sentence case
+                    for word in keyword_string.replace(',', ';').split(';')
+                ]
+                word_counter.update(words)  # Update the count
+
+        # Step 3: Structure the data for word cloud
+        word_cloud_data = [
+            {'text': word, 'size': count * 6}  # Scale size for visibility
+            for word, count in word_counter.items()
+        ]
+
+        # Step 4: Return the response
+        return Response(word_cloud_data)
