@@ -366,9 +366,7 @@ class DisorderStudyCountView(APIView):
         # Serialize the data
         serializer = DisorderStudyCountSerializer(disorder_counts, many=True)
         return Response(serializer.data)
-        
-
-
+      
 
 class ResearchRegionStudyCountView(APIView):
     def get(self, request):
@@ -498,3 +496,43 @@ class CountryCollaborationView(APIView):
             return Response(response_data, status=status.HTTP_200_OK)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+class TopFiveDisordersYearlyView(APIView):
+    def get(self, request):
+        # Step 1: Get the total study count per disorder and find the top five disorders
+        top_disorders = (
+            Study.objects.values('disorder__disorder_name')  # Group by disorder name
+            .annotate(total_study_count=Count('id'))  # Get the total study count per disorder
+            .order_by('-total_study_count')[:5]  # Limit to top five disorders
+        )
+
+        # Extract the names of the top five disorders
+        top_disorder_names = [disorder['disorder__disorder_name'] for disorder in top_disorders]
+
+        # Step 2: Get the yearly study count for these top five disorders
+        disorder_yearly_counts = (
+            Study.objects.filter(disorder__disorder_name__in=top_disorder_names)  # Filter for top disorders
+            .values('disorder__disorder_name', 'year')  # Group by disorder and year
+            .annotate(study_count=Count('id'))  # Count the studies for each year
+            .order_by('year')  # Optional: order by year
+        )
+
+        # Step 3: Organize the results
+        # Create a dictionary to store the yearly counts for each disorder
+        result = {}
+        for disorder_name in top_disorder_names:
+            result[disorder_name] = {}
+
+        for entry in disorder_yearly_counts:
+            disorder_name = entry['disorder__disorder_name']
+            year = entry['year']
+            count = entry['study_count']
+
+            # Append the study count to the appropriate disorder and year
+            result[disorder_name][year] = count
+
+        # Step 4: Return the response
+        return Response(result)
+

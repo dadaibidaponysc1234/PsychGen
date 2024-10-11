@@ -1,6 +1,6 @@
 from django.urls import path
 # from . import views
-from .views import StudyListView, StudyDetailView,DisorderStudyCountView, ResearchRegionStudyCountView,BiologicalModalityStudyCountView,GeneticSourceMaterialStudyCountView,YearlyStudyCountView,StudyDeleteView,StudyBulkDeleteView,AutoCompleteSuggestionView, CountryCollaborationView,CountryListView, DisorderListView, ArticleTypeListView, BiologicalModalityListView, GeneticSourceMaterialListView
+from .views import StudyListView, StudyDetailView,DisorderStudyCountView, ResearchRegionStudyCountView,BiologicalModalityStudyCountView,GeneticSourceMaterialStudyCountView,YearlyStudyCountView,StudyDeleteView,StudyBulkDeleteView,AutoCompleteSuggestionView, CountryCollaborationView,CountryListView, DisorderListView, ArticleTypeListView, BiologicalModalityListView, GeneticSourceMaterialListView,TopFiveDisordersYearlyView
 # StudyDesignListView,
 urlpatterns = [
     path('studies/', StudyListView.as_view(), name='study-list'),
@@ -25,5 +25,6 @@ urlpatterns = [
     # path('study-designs/', StudyDesignListView.as_view(), name='study-design-list'),
     path('biological-modalities/', BiologicalModalityListView.as_view(), name='biological-modality-list'),
     path('genetic-source-materials/', GeneticSourceMaterialListView.as_view(), name='genetic-source-material-list'),
+    path('TopFive-Disorders/', TopFiveDisordersYearlyView.as_view(), name='TopFive-Disorders'),
 
 ]
