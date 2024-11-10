@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'ResearchApp',
     'corsheaders',
     'rest_framework',
+    'rest_framework.authtoken',
     'clientSide',
     'Aboutpage',
 ]
@@ -55,7 +56,26 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-]
+    'ResearchApp.middleware.VisitorTrackingMiddleware',
+    ]
+
+
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+    #     'rest_framework.authentication.TokenAuthentication',
+            'rest_framework.authentication.SessionAuthentication',
+    ],
+    # 'AUTHENTICATION_BACKENDS' :[
+    # 'django.contrib.auth.backends.ModelBackend',
+    # ],
+
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',
+    ],
+}
+
+
 
 CORS_ALLOW_ALL_ORIGINS = True  # This allows all origins, you can restrict it to specific origins if needed
 

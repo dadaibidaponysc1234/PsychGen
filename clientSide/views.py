@@ -11,6 +11,9 @@ from django.http import JsonResponse
 from collections import defaultdict
 from django.http import HttpResponse
 from collections import Counter
+from rest_framework.permissions import IsAuthenticated
+
+# from rest_framework.permissions import IsAuthenticated
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -82,6 +85,7 @@ class GeneticSourceMaterialListView(APIView):
 class StudyListView(generics.ListCreateAPIView):
     serializer_class = StudySerializer
     pagination_class = StudyListPagination
+    # permission_classes = [IsAuthenticated]  # Restrict access to authenticated users only
 
     def get_queryset(self):
         queryset = Study.objects.all()
@@ -295,6 +299,7 @@ class StudyListView(generics.ListCreateAPIView):
 
 
 class StudyDeleteView(generics.DestroyAPIView):
+    permission_classes = [IsAuthenticated]
     queryset = Study.objects.all()
     serializer_class = StudySerializer
 
@@ -305,6 +310,7 @@ class StudyDeleteView(generics.DestroyAPIView):
         
 
 class StudyBulkDeleteView(APIView):
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
         ids = request.data.get('ids', [])

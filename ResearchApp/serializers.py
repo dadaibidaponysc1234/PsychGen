@@ -53,3 +53,12 @@ class StudySerializer(serializers.ModelSerializer):
         study.save()  # Save changes after setting many-to-many fields
 
         return study
+
+class DailyVisitSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    visit_count = serializers.IntegerField()
+
+class VisitorCountSerializer(serializers.Serializer):
+    unique_visitors = serializers.IntegerField()
+    total_visits = serializers.IntegerField()
+    daily_visits = DailyVisitSerializer(many=True)

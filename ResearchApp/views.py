@@ -1,18 +1,57 @@
+# from django.contrib.auth.models import User
+# from rest_framework.authtoken.models import Token
+# from rest_framework.authtoken.views import ObtainAuthToken
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 import csv
 from io import StringIO
 from django.core.exceptions import ValidationError
-from .models import Study, Disorder, BiologicalModality, GeneticSourceMaterial, ArticleType, StudyDesign, Country
-from .serializers import StudySerializer
+from django.db import models
+from .models import Study, Disorder, BiologicalModality, GeneticSourceMaterial, ArticleType, StudyDesign, Country,Visitor
+from .serializers import StudySerializer,VisitorCountSerializer
 from django.http import HttpResponse
 import json
 import logging
+from django.db.models import Count
+from datetime import timedelta
+from django.utils import timezone
+from rest_framework.permissions import IsAuthenticated
+
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.models import User
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import permission_classes
+
+class LoginAPIView(APIView):
+    def post(self, request):
+        username = request.data.get('username')
+        password = request.data.get('password')
+        
+        # Authenticate the user
+        user = authenticate(request, username=username, password=password)
+        if user is not None:
+            login(request, user)  # Log the user in
+            return Response({"message": "Login successful","username":user.username}, status=status.HTTP_200_OK)
+        else:
+            return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+
+
+class LogoutAPIView(APIView):
+    permission_classes = [IsAuthenticated]  # Only authenticated users can log out
+
+    def post(self, request):
+        logout(request)  # Log the user out
+        return Response({"message": "Logout successful"}, status=status.HTTP_200_OK)
+
+
 
 logger = logging.getLogger(__name__)
 
 class UploadCSVView(APIView):
+    permission_classes = [IsAuthenticated]  # Restrict access to authenticated users only
+
     def post(self, request, format=None):
         file = request.FILES.get('file')
         if not file:
@@ -129,6 +168,7 @@ class UploadCSVView(APIView):
 
 
 class DownloadCSVExampleView(APIView):
+    permission_classes = [IsAuthenticated]  # Restrict access to authenticated users only
     def get(self, request, format=None):
         # Define the response and CSV writer
         response = HttpResponse(content_type='text/csv')
@@ -164,3 +204,45 @@ class DownloadCSVExampleView(APIView):
         ])
 
         return response
+
+
+class VisitorCountAPIView(APIView):
+    # permission_classes = [IsAuthenticated]  # Restrict access to authenticated users only
+
+    def get(self, request):
+        # Count unique visitors by IP address
+        unique_visitors = Visitor.objects.values('ip_address').distinct().count()
+        
+        # Count total visits
+        total_visits = Visitor.objects.count()
+
+        # Get today's date and calculate the date 7 days ago
+        today = timezone.now().date()
+        last_7_days = today - timedelta(days=6)
+
+
+        # Query for visit counts grouped by day for the last 7 days
+        daily_visits = (
+            Visitor.objects
+            .filter(visit_date__date__range=[last_7_days, today])
+            .annotate(day=models.functions.TruncDate('visit_date'))
+            .values('day')
+            .annotate(visit_count=Count('id'))
+            .order_by('day')
+        )
+
+        # Prepare daily visits data as a list of dictionaries with date and visit count
+        daily_visits_data = [
+            {"date": day_data['day'], "visit_count": day_data['visit_count']}
+            for day_data in daily_visits
+        ]
+
+        # Prepare data for the response
+        data = {
+            "unique_visitors": unique_visitors,
+            "total_visits": total_visits,
+            "daily_visits": daily_visits_data
+        }
+
+        serializer = VisitorCountSerializer(data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
