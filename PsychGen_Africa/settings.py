@@ -41,9 +41,10 @@ INSTALLED_APPS = [
     'ResearchApp',
     'corsheaders',
     'rest_framework',
-    'rest_framework.authtoken',
+    # 'rest_framework.authtoken',
     'clientSide',
     'Aboutpage',
+    'rest_framework_simplejwt.token_blacklist',
 ]
 
 MIDDLEWARE = [
@@ -64,7 +65,8 @@ MIDDLEWARE = [
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
     #     'rest_framework.authentication.TokenAuthentication',
-            'rest_framework.authentication.SessionAuthentication',
+            # 'rest_framework.authentication.SessionAuthentication',
+            'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     # 'AUTHENTICATION_BACKENDS' :[
     # 'django.contrib.auth.backends.ModelBackend',
@@ -72,6 +74,7 @@ REST_FRAMEWORK = {
 
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
+        # 'rest_framework.permissions.IsAuthenticated',
     ],
 }
 

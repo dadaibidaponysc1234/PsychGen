@@ -26,33 +26,55 @@ from rest_framework.decorators import permission_classes
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
-@method_decorator(csrf_exempt, name='dispatch')
-class LoginAPIView(APIView):
-    def post(self, request):
-        username = request.data.get('username')
-        password = request.data.get('password')
+from rest_framework_simplejwt.tokens import RefreshToken
+
+# @method_decorator(csrf_exempt, name='dispatch')
+# class LoginAPIView(APIView):
+#     def post(self, request):
+#         username = request.data.get('username')
+#         password = request.data.get('password')
         
-        # Authenticate the user
-        user = authenticate(request, username=username, password=password)
-        if user is not None:
-            login(request, user)  # Log the user in
-            return Response({"message": "Login successful","username":user.username}, status=status.HTTP_200_OK)
-        else:
-            return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+#         # Authenticate the user
+#         user = authenticate(request, username=username, password=password)
+#         if user is not None:
+#             login(request, user)  # Log the user in
+#             return Response({"message": "Login successful","username":user.username}, status=status.HTTP_200_OK)
+#         else:
+#             return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
 
 
-@method_decorator(csrf_exempt, name='dispatch')
-class LogoutAPIView(APIView):
-    permission_classes = [IsAuthenticated]  # Only authenticated users can log out
+# @method_decorator(csrf_exempt, name='dispatch')
+# class LogoutAPIView(APIView):
+#     permission_classes = [IsAuthenticated]  # Only authenticated users can log out
 
-    def post(self, request):
-        logout(request)  # Log the user out
-        return Response({"message": "Logout successful"}, status=status.HTTP_200_OK)
+#     def post(self, request):
+#         logout(request)  # Log the user out
+#         return Response({"message": "Logout successful"}, status=status.HTTP_200_OK)
 
 
 
 logger = logging.getLogger(__name__)
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]  # Ensure authentication is required
+
+    def post(self, request):
+        try:
+            # Extract the refresh token from the request data
+            refresh_token = request.data.get('refresh_token')
+            if not refresh_token:
+                return Response({"error": "Refresh token is required"}, status=400)
+
+            # Blacklist the refresh token
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+
+            return Response({"message": "Logged out successfully"}, status=200)
+
+        except Exception as e:
+            return Response({"error": "Invalid token"}, status=400)
+
 
 class UploadCSVView(APIView):
     permission_classes = [IsAuthenticated]  # Restrict access to authenticated users only
@@ -173,9 +195,14 @@ class UploadCSVView(APIView):
 
 
 class DownloadCSVExampleView(APIView):
-    permission_classes = [IsAuthenticated]  # Restrict access to authenticated users only
+    permission_classes = [IsAuthenticated]
+
     def get(self, request, format=None):
         # Define the response and CSV writer
+        print(f"Authenticated user: {request.user}")  # Debugging
+        if not request.user.is_authenticated:
+            return Response({"error": "User is not authenticated"}, status=401)
+
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="study_template.csv"'
 
@@ -212,8 +239,7 @@ class DownloadCSVExampleView(APIView):
 
 
 class VisitorCountAPIView(APIView):
-    # permission_classes = [IsAuthenticated]  # Restrict access to authenticated users only
-
+    permission_classes = [IsAuthenticated]
     def get(self, request):
         # Count unique visitors by IP address
         unique_visitors = Visitor.objects.values('ip_address').distinct().count()
