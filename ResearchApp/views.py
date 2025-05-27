@@ -5,12 +5,16 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework import generics
 import csv
 from io import StringIO
 from django.core.exceptions import ValidationError
 from django.db import models
-from .models import Study, Disorder, BiologicalModality, GeneticSourceMaterial, ArticleType, StudyDesign, Country,Visitor
-from .serializers import StudySerializer,VisitorCountSerializer
+from .models import (Study, Disorder, BiologicalModality, 
+                    GeneticSourceMaterial, ArticleType, StudyDesign, 
+                    Country,Visitor,StudyDocument, StudyImage, ChatSession,ChatMessage)
+from .serializers import (StudySerializer,VisitorCountSerializer, StudyImageSerializer,
+                            ChatSessionSerializer, ChatMessageSerializer)
 from django.http import HttpResponse
 import json
 import logging
@@ -26,33 +30,15 @@ from rest_framework.decorators import permission_classes
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
 
-# @method_decorator(csrf_exempt, name='dispatch')
-# class LoginAPIView(APIView):
-#     def post(self, request):
-#         username = request.data.get('username')
-#         password = request.data.get('password')
-        
-#         # Authenticate the user
-#         user = authenticate(request, username=username, password=password)
-#         if user is not None:
-#             login(request, user)  # Log the user in
-#             return Response({"message": "Login successful","username":user.username}, status=status.HTTP_200_OK)
-#         else:
-#             return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+from services.embedding_pipeline import process_study_pdf
+from services.qa_pipeline import continue_chat
 
+from sentence_transformers import SentenceTransformer
 
-
-# @method_decorator(csrf_exempt, name='dispatch')
-# class LogoutAPIView(APIView):
-#     permission_classes = [IsAuthenticated]  # Only authenticated users can log out
-
-#     def post(self, request):
-#         logout(request)  # Log the user out
-#         return Response({"message": "Logout successful"}, status=status.HTTP_200_OK)
-
-
+retriever = SentenceTransformer("all-mpnet-base-v2")  # CPU-compatible
 
 logger = logging.getLogger(__name__)
 
@@ -277,3 +263,114 @@ class VisitorCountAPIView(APIView):
 
         serializer = VisitorCountSerializer(data)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# views.py
+#==============================================================================================
+#==============================================================================================
+#==============================================================================================
+class UploadPDFView(APIView):
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        study_id = request.data.get("study_id")
+        file = request.FILES.get("file")
+
+        if not study_id or not file:
+            return Response({"error": "Missing study_id or file"}, status=400)
+
+        try:
+            study = Study.objects.get(id=study_id)
+        except Study.DoesNotExist:
+            return Response({"error": "Study not found"}, status=404)
+
+        doc, created = StudyDocument.objects.get_or_create(study=study)
+        doc.pdf_file = file
+        doc.save()
+
+        process_study_pdf(doc)  # Extract, chunk, embed, upsert
+
+        return Response({"message": "PDF uploaded and indexed successfully."})
+
+
+class ContinueChatView(APIView):
+    def post(self, request):
+        email = request.data.get("email")
+        question = request.data.get("question")
+        session_id = request.data.get("session_id")
+
+        if not email or not question:
+            return Response({"error": "email and question are required."}, status=400)
+
+        # Optional safety: reject if session_id exists but belongs to another user
+        if session_id:
+            session = ChatSession.objects.filter(id=session_id).first()
+            if session and session.email != email:
+                return Response({"error": "Session does not belong to this email."}, status=403)
+
+        result = continue_chat(email=email, question=question, session_id=session_id)
+        return Response(result, status=200)
+
+
+
+class ChatSessionListView(APIView):
+    def get(self, request):
+        email = request.query_params.get("email")
+        if not email:
+            return Response({"error": "Missing email query param."}, status=400)
+
+        sessions = ChatSession.objects.filter(email=email).order_by('-created_at')
+        data = ChatSessionSerializer(sessions, many=True).data
+        return Response(data)
+
+
+
+# ResearchApp/views.py
+class StudyImageUploadView(generics.CreateAPIView):
+    queryset = StudyImage.objects.all()
+    serializer_class = StudyImageSerializer
+    parser_classes = [MultiPartParser, FormParser]
+
+    def perform_create(self, serializer):
+        image_instance = serializer.save()
+        if image_instance.caption:
+            embedding = retriever.encode(image_instance.caption).tolist()
+            image_instance.embedding = embedding
+            image_instance.save()
+
+
+class StudyImageListView(generics.ListAPIView):
+    queryset = StudyImage.objects.all().order_by('-id')
+    serializer_class = StudyImageSerializer
+
+
+class StudyImageDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = StudyImage.objects.all()
+    serializer_class = StudyImageSerializer
+
+
+class DeleteChatSessionView(generics.DestroyAPIView):
+    queryset = ChatSession.objects.all()
+    serializer_class = ChatSessionSerializer
+    lookup_field = "pk"
+
+    def delete(self, request, *args, **kwargs):
+        obj = self.get_object()
+        email = request.query_params.get("email")
+        if not email or obj.email != email:
+            return Response({"error": "Unauthorized"}, status=403)
+        return super().delete(request, *args, **kwargs)
+
+
+class DeleteChatMessageView(generics.DestroyAPIView):
+    queryset = ChatMessage.objects.all()
+    serializer_class = ChatMessageSerializer
+    lookup_field = "pk"
+
+    def delete(self, request, *args, **kwargs):
+        obj = self.get_object()
+        session_email = obj.session.email
+        email = request.query_params.get("email")
+        if not email or session_email != email:
+            return Response({"error": "Unauthorized"}, status=403)
+        return super().delete(request, *args, **kwargs)

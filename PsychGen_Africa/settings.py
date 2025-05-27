@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 from pathlib import Path
 import os
+from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -45,6 +46,7 @@ INSTALLED_APPS = [
     'clientSide',
     'Aboutpage',
     'rest_framework_simplejwt.token_blacklist',
+    'drf_yasg',
 ]
 
 MIDDLEWARE = [
@@ -78,6 +80,12 @@ REST_FRAMEWORK = {
     ],
 }
 
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),  # Extend to 60 minutes
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),     # Optional: Set refresh token expiry
+    'ROTATE_REFRESH_TOKENS': False,                 # Optional: Keep refresh token reuse disabled
+    'BLACKLIST_AFTER_ROTATION': False,              # Optional: Do not blacklist old refresh tokens
+}
 
 
 CORS_ALLOW_ALL_ORIGINS = True  # This allows all origins, you can restrict it to specific origins if needed

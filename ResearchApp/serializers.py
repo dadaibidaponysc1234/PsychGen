@@ -1,6 +1,6 @@
 from rest_framework import serializers
-from .models import Study, Disorder, BiologicalModality, GeneticSourceMaterial, ArticleType, StudyDesign, Country
-
+from .models import (Study, Disorder, BiologicalModality, GeneticSourceMaterial, 
+                    ArticleType, StudyDesign, Country, StudyImage,ChatSession, ChatMessage)
 
 class CountrySerializer(serializers.ModelSerializer):
     class Meta:
@@ -62,3 +62,25 @@ class VisitorCountSerializer(serializers.Serializer):
     unique_visitors = serializers.IntegerField()
     total_visits = serializers.IntegerField()
     daily_visits = DailyVisitSerializer(many=True)
+
+
+# ResearchApp/serializers.py
+class StudyImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StudyImage
+        fields = ['id', 'study', 'image', 'caption', 'embedding']
+        read_only_fields = ['embedding']
+
+
+class ChatMessageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChatMessage
+        fields = '__all__'
+
+
+class ChatSessionSerializer(serializers.ModelSerializer):
+    messages = ChatMessageSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ChatSession
+        fields = ['id', 'email', 'title', 'created_at', 'messages']

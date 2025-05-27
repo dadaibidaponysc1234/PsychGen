@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from ResearchApp.models import Study, Disorder, BiologicalModality, GeneticSourceMaterial, ArticleType, StudyDesign, Country
 from rest_framework import serializers
+
 # from your_app.models import (
 #     Study, Disorder, ResearchRegion, StudyDesign, BiologicalModality, 
 #     GeneticSourceMaterial, ArticleType, Author, Remark
@@ -74,3 +75,12 @@ class YearlyStudyCountSerializer(serializers.Serializer):
     study_count = serializers.IntegerField()
     citation = serializers.IntegerField()  # Total citations per year
     impact_factor = serializers.FloatField(allow_null=True)  # Average impact factor per year
+
+
+# serializers.py
+
+
+class GetShortStudySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Study
+        fields = ['id','pmid', 'title', 'year', 'DOI']

@@ -105,3 +105,55 @@ class Visitor(models.Model):
 
     def __str__(self):
         return f"Visitor from {self.ip_address} on {self.visit_date}"
+
+
+class StudyDocument(models.Model):
+    study = models.OneToOneField('Study', on_delete=models.CASCADE, related_name='document')
+    pdf_file = models.FileField(upload_to='pdfs/')
+    extracted_text = models.TextField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Document for {self.study.title[:50]}"
+
+
+class StudyImage(models.Model):
+    study = models.ForeignKey('Study', on_delete=models.CASCADE, related_name='images')
+    image = models.ImageField(upload_to='study_images/')
+    caption = models.TextField()
+    embedding = models.JSONField(null=True, blank=True)  # Embedding of the caption for semantic match
+
+    def __str__(self):
+        return f"Image for {self.study.title[:50]} - {self.caption[:40]}"
+
+
+class SavedResponse(models.Model):
+    email = models.EmailField()
+    question = models.TextField()
+    answer = models.TextField()
+    image_url = models.URLField(null=True, blank=True)
+    studies = models.ManyToManyField('Study', related_name='saved_responses')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.email} | {self.question[:50]}"
+
+
+class ChatSession(models.Model):
+    email = models.EmailField()
+    title = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.title or f"Session {self.id}"
+
+
+class ChatMessage(models.Model):
+    session = models.ForeignKey(ChatSession, on_delete=models.CASCADE, related_name='messages')
+    question = models.TextField()
+    answer = models.TextField()
+    image_results = models.JSONField(null=True, blank=True)
+    source_studies = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Q: {self.question[:40]}"

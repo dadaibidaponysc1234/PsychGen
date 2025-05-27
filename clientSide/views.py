@@ -1,7 +1,9 @@
 import csv
 from rest_framework import generics
 from ResearchApp.models import Study, Disorder, BiologicalModality, GeneticSourceMaterial, ArticleType, StudyDesign, Country
-from .serializers import StudySerializer,DisorderStudyCountSerializer,CountryStudyCountSerializer,BiologicalModalityStudyCountSerializer,GeneticSourceMaterialStudyCountSerializer,YearlyStudyCountSerializer,CountrySerializer
+from .serializers import (StudySerializer,DisorderStudyCountSerializer,CountryStudyCountSerializer,
+                            BiologicalModalityStudyCountSerializer,GeneticSourceMaterialStudyCountSerializer,
+                            YearlyStudyCountSerializer,CountrySerializer,GetShortStudySerializer)
 from django.db.models import Count, Q, Sum, Avg
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -12,6 +14,7 @@ from collections import defaultdict
 from django.http import HttpResponse
 from collections import Counter
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.generics import ListAPIView
 
 # from rest_framework.permissions import IsAuthenticated
 
@@ -567,3 +570,9 @@ class WordCloudView(APIView):
 
         # Step 4: Return the response
         return Response(word_cloud_data)
+
+
+# views.py
+class StudyListView(ListAPIView):
+    queryset = Study.objects.all()
+    serializer_class = GetShortStudySerializer

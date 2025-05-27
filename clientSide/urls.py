@@ -3,6 +3,7 @@ from django.urls import path
 from .views import StudyListView, StudyDetailView,DisorderStudyCountView, ResearchRegionStudyCountView,BiologicalModalityStudyCountView,GeneticSourceMaterialStudyCountView,YearlyStudyCountView,StudyDeleteView,StudyBulkDeleteView,AutoCompleteSuggestionView, CountryCollaborationView,CountryListView, DisorderListView, ArticleTypeListView, BiologicalModalityListView, GeneticSourceMaterialListView,TopFiveDisordersYearlyView,WordCloudView
 # StudyDesignListView,
 urlpatterns = [
+    path('shortstudies/', StudyListView.as_view(), name='short-study-list'),
     path('studies/', StudyListView.as_view(), name='study-list'),
     path('studies/<int:pk>/', StudyDetailView.as_view(), name='study-detail'),
     path('studies/delete/<int:pk>/', StudyDeleteView.as_view(), name='study-delete'),
