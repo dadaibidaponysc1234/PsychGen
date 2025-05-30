@@ -573,6 +573,6 @@ class WordCloudView(APIView):
 
 
 # views.py
-class StudyListView(ListAPIView):
+class ShortStudyListView(ListAPIView):
     queryset = Study.objects.all()
     serializer_class = GetShortStudySerializer
