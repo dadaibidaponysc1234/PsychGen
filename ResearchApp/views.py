@@ -308,7 +308,7 @@ class ContinueChatView(APIView):
             if session and session.email != email:
                 return Response({"error": "Session does not belong to this email."}, status=403)
 
-        result = continue_chat(email=email, question=question, session_id=session_id)
+        result = continue_chat(request, email=email, question=question, session_id=session_id)
         return Response(result, status=200)
 
 
