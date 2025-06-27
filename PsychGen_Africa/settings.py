@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'Aboutpage',
     'rest_framework_simplejwt.token_blacklist',
     'drf_yasg',
+    'prs_pineline',
 ]
 
 MIDDLEWARE = [
