@@ -110,7 +110,7 @@ A:"""
 
 
     # 📦 Get source studies
-    study_ids = {m["metadata"].get("study_id") for m in filtered_matches["matches"] if "study_id" in m["metadata"]}
+    study_ids = {m["metadata"].get("study_id") for m in filtered_matches if "study_id" in m["metadata"]}
     # study_ids = {m["metadata"].get("study_id") for m in results["matches"] if "study_id" in m["metadata"]}
     matched_studies = Study.objects.filter(id__in=study_ids)
     sources = [
