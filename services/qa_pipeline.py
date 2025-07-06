@@ -50,17 +50,34 @@ def continue_chat(request, email, question, session_id=None):
     history_prompt = "\n".join([f"Q: {msg.question}\nA: {msg.answer}" for msg in history])
 
     # 🔍 Retrieve context chunks from Pinecone
-    results = index.query(vector=query_vector, top_k=3, include_metadata=True)
-    context = "\n".join([f"- {match['metadata']['content']}" for match in results['matches']])
+    # results = index.query(vector=query_vector, top_k=3, include_metadata=True)
+    # context = "\n".join([f"- {match['metadata']['content']}" for match in results['matches']])
+    raw_results = index.query(vector=query_vector, top_k=10, include_metadata=True)
+
+    SIMILARITY_THRESHOLD = 0.4
+
+    filtered_matches = [
+    match for match in raw_results["matches"]
+    if match["score"] >= SIMILARITY_THRESHOLD]
+
+    context = "\n".join([
+    f"- {match['metadata']['content']}" for match in filtered_matches
+    ])
+
     context_prompt = f"Relevant study context:\n{context}"
+
 
     # 🧠 Final GPT prompt
     prompt = f"""
+You are ỌpọlọAI, an assistant answering questions based only on the study content provided.
+
+Previous questions and answers:
 {history_prompt}
 
+Relevant study excerpts:
 {context_prompt}
 
-Now answer the new question:
+Using the above studies only, answer this:
 Q: {question}
 A:"""
 
@@ -76,8 +93,25 @@ A:"""
     )
     answer = response.choices[0].message.content
 
+    # 🤖 Generate follow-up suggestions
+    try:
+        suggestion_response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "user", "content": f"Based on this answer, suggest 2 relevant follow-up questions:\n\n{answer}"}
+            ],
+            max_tokens=60,
+            temperature=0.4
+        )
+        suggestions = suggestion_response.choices[0].message.content.strip().split("\n")
+        suggestions = [s.lstrip("-1234567890. ").strip() for s in suggestions if s.strip()]
+    except Exception:
+        suggestions = []
+
+
     # 📦 Get source studies
-    study_ids = {m["metadata"].get("study_id") for m in results["matches"] if "study_id" in m["metadata"]}
+    study_ids = {m["metadata"].get("study_id") for m in filtered_matches["matches"] if "study_id" in m["metadata"]}
+    # study_ids = {m["metadata"].get("study_id") for m in results["matches"] if "study_id" in m["metadata"]}
     matched_studies = Study.objects.filter(id__in=study_ids)
     sources = [
         {
@@ -124,5 +158,6 @@ A:"""
         "question": question,
         "answer": answer,
         "images": images,
-        "sources": sources
+        "sources": sources,
+        "suggested_questions": suggestions
     }
