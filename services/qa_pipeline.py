@@ -147,7 +147,17 @@ A:"""
     ]
 
     # 🖼️ Top related images
-    images = get_top_images(request, query_vector)
+    images = []
+    irrelevant_markers = [
+    "not explicitly available",
+    "no relevant study context",
+    "unable to find",
+    "no information found",
+    "based on the context provided, there is no",
+    "insufficient information"
+    ]
+    if not any(marker in answer.lower() for marker in irrelevant_markers):
+        images = get_top_images(request, query_vector)
 
     # 💾 Save message
     ChatMessage.objects.create(
