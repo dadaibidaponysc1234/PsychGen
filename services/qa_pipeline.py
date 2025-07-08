@@ -52,7 +52,7 @@ def continue_chat(request, email, question, session_id=None):
     # 🔍 Retrieve context chunks from Pinecone
     # results = index.query(vector=query_vector, top_k=3, include_metadata=True)
     # context = "\n".join([f"- {match['metadata']['content']}" for match in results['matches']])
-    raw_results = index.query(vector=query_vector, top_k=10, include_metadata=True)
+    raw_results = index.query(vector=query_vector, top_k=20, include_metadata=True)
 
     SIMILARITY_THRESHOLD = 0.4
 
@@ -68,18 +68,38 @@ def continue_chat(request, email, question, session_id=None):
 
 
     # 🧠 Final GPT prompt
+#     prompt = f"""
+# You are ỌpọlọAI, an assistant answering questions based only on the study content provided.
+
+# Previous questions and answers:
+# {history_prompt}
+
+# Relevant study excerpts:
+# {context_prompt}
+
+# Using the above studies only, answer this:
+# Q: {question}
+# A:"""
+
     prompt = f"""
-You are ỌpọlọAI, an assistant answering questions based only on the study content provided.
+You are ỌpọlọAI, a psychiatric genomics research assistant. You are to answer user questions strictly based on the context provided from the research studies below.
+
+Instructions:
+- Do not make up any facts not present in the context.
+- Use specific data, genetic findings, or participant details where available.
+- If the answer is not clearly in the context, say: "This information is not explicitly available in the retrieved studies."
+- Prioritize depth, precision, and research-style language.
 
 Previous questions and answers:
 {history_prompt}
 
-Relevant study excerpts:
+Relevant study context:
 {context_prompt}
 
-Using the above studies only, answer this:
+Now answer:
 Q: {question}
 A:"""
+
 
     # 🔥 Generate answer with GPT-4o
     response = openai_client.chat.completions.create(
@@ -100,7 +120,7 @@ A:"""
             messages=[
                 {"role": "user", "content": f"Based on this answer, suggest 2 relevant follow-up questions:\n\n{answer}"}
             ],
-            max_tokens=60,
+            max_tokens=30,
             temperature=0.4
         )
         suggestions = suggestion_response.choices[0].message.content.strip().split("\n")
