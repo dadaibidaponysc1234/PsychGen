@@ -2,7 +2,8 @@ from django.urls import path
 from .views import (UploadCSVView, DownloadCSVExampleView,VisitorCountAPIView,
                     LogoutView, UploadPDFView,StudyImageUploadView,
                     StudyImageListView,StudyImageDetailView,ContinueChatView, 
-                    ChatSessionListView, DeleteChatSessionView, DeleteChatMessageView)
+                    ChatSessionListView, DeleteChatSessionView, DeleteChatMessageView,
+                    IndexAllPDFsView, IndexSinglePDFView)
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 # ,LoginAPIView,LogoutAPIView
@@ -26,5 +27,8 @@ urlpatterns = [
     path("ai/chat/sessions/", ChatSessionListView.as_view(), name="chat-sessions"),
     path("ai/chat/session/<int:pk>/delete/", DeleteChatSessionView.as_view(), name="delete-chat-session"),
     path("ai/chat/message/<int:pk>/delete/", DeleteChatMessageView.as_view(), name="delete-chat-message"),
+
+    path("index/all/", IndexAllPDFsView.as_view(), name="index_all_pdfs"),
+    path("index/<int:pk>/", IndexSinglePDFView.as_view(), name="index_single_pdf"),
 
 ]

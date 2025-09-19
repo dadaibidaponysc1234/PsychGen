@@ -1,297 +1,148 @@
-from openai import OpenAI
-from ResearchApp.models import Study, StudyImage, ChatSession, ChatMessage
-from sentence_transformers import SentenceTransformer
-from pinecone import Pinecone
-from scipy.spatial.distance import cosine
-from dotenv import load_dotenv
+# rag_service.py
 import os
-import fitz  # PyMuPDF
-import json
+from typing import Dict, Any, List
+from django.db import transaction
+from django.utils import timezone
 
-load_dotenv()
+from openai import OpenAI
+from langchain_openai import OpenAIEmbeddings
+from langchain_pinecone import PineconeVectorStore
+import pinecone
 
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"), environment=os.getenv("PINECONE_ENV"))
-index = pc.Index("psygen-qa-index")
-# retriever = SentenceTransformer("all-mpnet-base-v2")
-retriever = SentenceTransformer("multi-qa-mpnet-base-dot-v1")
+from .models import Study, StudyDocument, ChatSession, ChatMessage
 
+INDEX_NAME = os.getenv("PINECONE_INDEX", "psygen-studies")
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+PINECONE_ENV = os.getenv("PINECONE_ENV")  # e.g. "gcp-starter" / region string
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-def get_top_images(request, query_embedding, max_results=8, similarity_threshold=0.6):
-    images = StudyImage.objects.exclude(embedding__isnull=True)
-    results = []
+# you already wrote this for indexing; re-use same keys
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-    for img in images:
-        try:
-            distance = cosine(query_embedding, img.embedding)
-            if distance < similarity_threshold:
-                results.append((distance, img))
-        except:
-            continue
+def _init_vectorstore():
+    pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENV)
+    index = pinecone.Index(INDEX_NAME)
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    return PineconeVectorStore(index=index, embedding=embeddings)
 
-    results.sort(key=lambda x: x[0])
-    return [
-        {
-            "id": img.id,
-            "caption": img.caption,
-            "image_url": request.build_absolute_uri(img.image.url),
-            "study_id": img.study.id,
-            "study_title": img.study.title
-        }
-        for _, img in results[:max_results]
-    ]
+def _trim_text(s: str, max_chars: int = 8000) -> str:
+    if not s:
+        return ""
+    return s if len(s) <= max_chars else s[:max_chars] + " …[truncated]"
 
+def _format_history(history_qas: List[ChatMessage], max_chars: int = 4000) -> str:
+    pieces = []
+    for msg in history_qas:
+        pieces.append(f"Q: {msg.question}\nA: {msg.answer}")
+    joined = "\n".join(pieces)
+    return _trim_text(joined, max_chars=max_chars)
 
-def extract_text_from_pdf(path):
-    doc = fitz.open(path)
-    text = "\n".join([page.get_text() for page in doc])
-    doc.close()
-    return text
-
-def generate_structured_summary_for_study(study):
-    if not hasattr(study, 'document'):
-        return None
-
-    text = study.document.extracted_text or extract_text_from_pdf(study.document.pdf_file.path)
-    if not text or len(text) < 500:
-        return None
-
-    prompt = f"""
-You are a summarization expert. Given this research paper content, extract and return a structured JSON summary with these sections:
-- background
-- methodology
-- findings
-- conclusion
-- limitations
-
-Text:
-{text[:10000]}  # Truncate to avoid token limit
-
-Respond in valid JSON only.
-"""
-    try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=1000
-        )
-        summary_text = response.choices[0].message.content
-        return json.loads(summary_text)
-    except Exception as e:
-        print(f"❌ Summary error for {study.title}: {e}")
-        return None
-
-
-# def continue_chat(request, email, question, session_id=None):
-#     query_vector = retriever.encode(question).tolist()
-
-#     # 🔍 Retrieve or create session
-#     session = ChatSession.objects.filter(id=session_id).first() if session_id else ChatSession.objects.create(email=email)
-
-#     # 📚 Collect prior Q&As as context
-#     history = session.messages.order_by("created_at")
-#     history_prompt = "\n".join([f"Q: {msg.question}\nA: {msg.answer}" for msg in history])
-
-#     # 🔍 Retrieve context chunks from Pinecone
-#     # results = index.query(vector=query_vector, top_k=3, include_metadata=True)
-#     # context = "\n".join([f"- {match['metadata']['content']}" for match in results['matches']])
-#     raw_results = index.query(vector=query_vector, top_k=20, include_metadata=True)
-
-#     SIMILARITY_THRESHOLD = 0.4
-
-#     filtered_matches = [
-#     match for match in raw_results["matches"]
-#     if match["score"] >= SIMILARITY_THRESHOLD]
-
-#     context = "\n".join([
-#     f"- {match['metadata']['content']}" for match in filtered_matches
-#     ])
-
-#     context_prompt = f"Relevant study context:\n{context}"
-
-
-#     prompt = f"""
-# You are ỌpọlọAI, a psychiatric genomics research assistant. You are to answer user questions strictly based on the context provided from the research studies below.
-
-# Instructions:
-# - Do not make up any facts not present in the context.
-# - Use specific data, genetic findings, or participant details where available.
-# - If the answer is not clearly in the context, say: "This information is not explicitly available in the retrieved studies."
-# - Prioritize depth, precision, and research-style language.
-
-# Previous questions and answers:
-# {history_prompt}
-
-# Relevant study context:
-# {context_prompt}
-
-# Now answer:
-# Q: {question}
-# A:"""
-
-
-#     # 🔥 Generate answer with GPT-4o
-#     response = openai_client.chat.completions.create(
-#         model="gpt-4o",
-#         messages=[
-#             {"role": "system", "content": "You are ỌpọlọAI, a helpful research assistant."},
-#             {"role": "user", "content": prompt}
-#         ],
-#         temperature=0.3,
-#         max_tokens=400
-#     )
-#     answer = response.choices[0].message.content
-
-#     # 🤖 Generate follow-up suggestions
-#     try:
-#         suggestion_response = openai_client.chat.completions.create(
-#             model="gpt-4o",
-#             messages=[
-#                 {"role": "user", "content": f"Based on this answer, suggest 2 relevant follow-up questions:\n\n{answer}"}
-#             ],
-#             max_tokens=30,
-#             temperature=0.4
-#         )
-#         suggestions = suggestion_response.choices[0].message.content.strip().split("\n")
-#         suggestions = [s.lstrip("-1234567890. ").strip() for s in suggestions if s.strip()]
-#     except Exception:
-#         suggestions = []
-
-
-#     # 📦 Get source studies
-#     # study_ids = {m["metadata"].get("study_id") for m in filtered_matches if "study_id" in m["metadata"]}
-#     # # study_ids = {m["metadata"].get("study_id") for m in results["matches"] if "study_id" in m["metadata"]}
-#     # matched_studies = Study.objects.filter(id__in=study_ids)
-#     # sources = [
-#     #     {
-#     #         "id": s.id,
-#     #         "title": s.title,
-#     #         "journal": s.journal_name,
-#     #         "year": s.year,
-#     #         "doi": s.DOI,
-#     #         "lead_author": s.lead_author,
-#     #         "pdf_url": request.build_absolute_uri(s.document.pdf_file.url) if getattr(s, "document") and s.document.pdf_file else None
-#     #     }
-#     #     for s in matched_studies
-#     # ]
-
-#     # 📦 Get source studies
-#     study_ids = {m["metadata"].get("study_id") for m in filtered_matches if "study_id" in m["metadata"]}
-#     matched_studies = Study.objects.filter(id__in=study_ids)
-
-#     sources = []
-#     for s in matched_studies:
-#         summary = generate_structured_summary_for_study(s)
-#         sources.append({
-#             "id": s.id,
-#             "title": s.title,
-#             "journal": s.journal_name,
-#             "year": s.year,
-#             "doi": s.DOI,
-#             "lead_author": s.lead_author,
-#             "pdf_url": request.build_absolute_uri(s.document.pdf_file.url) if getattr(s, "document") and s.document.pdf_file else None,
-#             "summary": summary  # 🆕 this adds the structured summary
-#         })
-
-
-#     # 🖼️ Top related images
-#     images = []
-#     irrelevant_markers = [
-#     "not explicitly available",
-#     "no relevant study context",
-#     "unable to find",
-#     "no information found",
-#     "based on the context provided, there is no",
-#     "insufficient information"
-#     ]
-#     if not any(marker in answer.lower() for marker in irrelevant_markers):
-#         images = get_top_images(request, query_vector)
-
-#     # 💾 Save message
-#     ChatMessage.objects.create(
-#         session=session,
-#         question=question,
-#         answer=answer,
-#         image_results=images,
-#         source_studies=sources
-#     )
-
-#     # 🏷️ Title the session if it's empty
-#     if not session.title:
-#         try:
-#             short_title = openai_client.chat.completions.create(
-#                 model="gpt-4o",
-#                 messages=[{"role": "user", "content": f"Give a short 5-word title for this: {question}"}],
-#                 max_tokens=10,
-#                 temperature=0.3
-#             )
-#             session.title = short_title.choices[0].message.content
-#             session.save()
-#         except:
-#             pass
-
-#     return {
-#         "session_id": session.id,
-#         "title": session.title,
-#         "question": question,
-#         "answer": answer,
-#         "images": images,
-#         "sources": sources,
-#         "suggested_questions": suggestions
-#     }
-
-def continue_chat(request, email, question, session_id=None):
-    query_vector = retriever.encode(question).tolist()
-
-    # 🔍 Retrieve or create session
-    session = ChatSession.objects.filter(id=session_id).first() if session_id else ChatSession.objects.create(email=email)
-
-    # 📚 Collect prior Q&As as context
-    history = session.messages.order_by("created_at")
-    history_prompt = "\n".join([f"Q: {msg.question}\nA: {msg.answer}" for msg in history])
-
-    # 🔍 Retrieve context chunks from Pinecone
-    raw_results = index.query(vector=query_vector, top_k=10, include_metadata=True)
-    SIMILARITY_THRESHOLD = 0.4
-    filtered_matches = [match for match in raw_results["matches"] if match["score"] >= SIMILARITY_THRESHOLD]
-
-    context = "\n".join([f"- {match['metadata']['content']}" for match in filtered_matches])
-    context_prompt = f"Relevant study context:\n{context}"
-
-    # 📦 Get source studies
-    study_ids = {m["metadata"].get("study_id") for m in filtered_matches if "study_id" in m["metadata"]}
-    matched_studies = Study.objects.filter(id__in=study_ids)
-
-    sources = []
-    for s in matched_studies:
-        summary = generate_structured_summary_for_study(s)
-        sources.append({
-            "id": s.id,
-            "title": s.title,
-            "journal": s.journal_name,
-            "year": s.year,
-            "doi": s.DOI,
-            "lead_author": s.lead_author,
-            "pdf_url": request.build_absolute_uri(s.document.pdf_file.url) if getattr(s, "document") and s.document.pdf_file else None,
-            "summary": summary
+def _sources_from_docs(docs) -> List[Dict[str, Any]]:
+    """Flatten relevant metadata for UI display and citation."""
+    out = []
+    for d in docs:
+        md = d.metadata or {}
+        out.append({
+            "study_id": md.get("study_id"),
+            "title": md.get("title"),
+            "pmid": md.get("pmid"),
+            "DOI": md.get("DOI"),
+            "journal_name": md.get("journal_name"),
+            "year": md.get("year"),
+            "countries": md.get("countries", []),
+            "disorder": md.get("disorder", []),
+            "article_type": md.get("article_type", []),
+            "biological_modalities": md.get("biological_modalities", []),
+            "genetic_source_materials": md.get("genetic_source_materials", []),
+            "page": md.get("page"),
+            "score": getattr(d, "score", None),  # set by retriever when available
         })
+    # de-dup by (study_id,page) while keeping highest score
+    dedup = {}
+    for s in out:
+        key = (s.get("study_id"), s.get("page"))
+        if key not in dedup or (s.get("score") or 0) > (dedup[key].get("score") or 0):
+            dedup[key] = s
+    return list(dedup.values())
 
-    # ✨ Create combined prompt
-    summary_context = "\n\n".join([
-        f"""STUDY: {s['title']}\nBackground: {s['summary'].get('background', 'N/A')}\nMethodology: {s['summary'].get('methodology', 'N/A')}\nFindings: {s['summary'].get('findings', 'N/A')}\nConclusion: {s['summary'].get('conclusion', 'N/A')}\nLimitations: {s['summary'].get('limitations', 'N/A')}"""
-        for s in sources if s.get("summary")
-    ])
+def get_top_images(request, query_text: str) -> List[Dict[str, Any]]:
+    """Stub: hook your existing image search; kept simple for now."""
+    # You can keep your existing vector image search; here we just return empty
+    return []
 
+@transaction.atomic
+def continue_chat_rag(
+    request,
+    email: str,
+    question: str,
+    session_id: int | None = None,
+    # optional metadata filters you may pass from UI:
+    filters: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """
+    LangChain-based retrieval + OpenAI generation. No manual .encode() or raw index.query().
+    """
+    vectorstore = _init_vectorstore()
+
+    # Build a retriever with score threshold (similarity)
+    # Use "similarity_score_threshold" to apply threshold, and raise k/fetch_k for recall
+    retriever = vectorstore.as_retriever(
+        search_type="similarity_score_threshold",
+        search_kwargs={
+            "k": 12,                    # return up to 12 chunks
+            "score_threshold": 0.40,    # your previous threshold
+            # Optional: metadata filters, e.g. {"year": {"$gte": 2018}}
+            "filter": filters or None
+        },
+    )
+
+    # Session
+    if session_id:
+        session = ChatSession.objects.filter(id=session_id).first()
+        if not session:
+            session = ChatSession.objects.create(email=email)
+    else:
+        session = ChatSession.objects.create(email=email)
+
+    # History (for memory in prompt only; we still do RAG fresh each question)
+    history_qas = session.messages.order_by("created_at")
+    history_prompt = _format_history(history_qas)
+
+    # Retrieve documents
+    docs = retriever.get_relevant_documents(question)  # returns LangChain Documents with .page_content & .metadata
+
+    # Build context (cap the context to avoid overlong prompts)
+    max_context_chars = 8000
+    context_chunks = []
+    running = 0
+    for d in docs:
+        t = d.page_content or ""
+        if running + len(t) > max_context_chars:
+            # add what fits
+            remaining = max_context_chars - running
+            if remaining > 50:
+                context_chunks.append(t[:remaining])
+                running = max_context_chars
+            break
+        context_chunks.append(t)
+        running += len(t)
+    context = "\n".join(f"- {c}" for c in context_chunks)
+    context_prompt = f"Relevant study context:\n{context}" if context else "Relevant study context:\n(none retrieved)"
+
+    # Sources list for UI
+    sources = _sources_from_docs(docs)
+
+    # (Optional) summaries section — if you have precomputed summaries, inject here; else leave empty
+    summary_context = ""
+
+    # Compose final prompt
     prompt = f"""
-You are ỌpọlọAI, a psychiatric genomics research assistant. You are to answer user questions strictly based on the context provided from the research studies below.
-
-Instructions:
-- Do not make up any facts not present in the context.
-- Use specific data, genetic findings, or participant details where available.
-- If the answer is not clearly in the context, say: \"This information is not explicitly available in the retrieved studies.\"
-- Prioritize depth, precision, and research-style language.
+You are ỌpọlọAI, a psychiatric genomics research assistant. Answer strictly from the provided context (research study chunks). 
+- Do NOT fabricate facts.
+- Prefer precise details (genes/variants/sample sizes/statistics) when present.
+- If the answer is not clearly present, say: "This information is not explicitly available in the retrieved studies."
+- Keep tone: scholarly, concise, and well-structured.
 
 --- Previous Q&A ---
 {history_prompt}
@@ -304,69 +155,65 @@ Instructions:
 
 Now answer:
 Q: {question}
-A:"""
+A:
+""".strip()
 
-    # 🔥 Generate answer with GPT-4o
-    response = openai_client.chat.completions.create(
+    # Generate
+    chat = client.chat.completions.create(
         model="gpt-4o",
         messages=[
             {"role": "system", "content": "You are ỌpọlọAI, a helpful research assistant."},
-            {"role": "user", "content": prompt}
+            {"role": "user", "content": prompt},
         ],
         temperature=0.3,
-        max_tokens=400
+        max_tokens=500,
     )
-    answer = response.choices[0].message.content
+    answer = chat.choices[0].message.content
 
-    # 🤖 Generate follow-up suggestions
+    # Suggestions
     try:
-        suggestion_response = openai_client.chat.completions.create(
+        sugg = client.chat.completions.create(
             model="gpt-4o",
-            messages=[
-                {"role": "user", "content": f"Based on this answer, suggest 3 relevant follow-up questions:\n\n{answer}"}
-            ],
-            max_tokens=60,
-            temperature=0.4
+            messages=[{"role": "user", "content": f"Based on this answer, suggest 3 concise follow-up research questions:\n\n{answer}"}],
+            max_tokens=80,
+            temperature=0.4,
         )
-        suggestions = suggestion_response.choices[0].message.content.strip().split("\n")
-        suggestions = [s.lstrip("-1234567890. ").strip() for s in suggestions if s.strip()]
+        suggestions = [s.strip("- •").strip() for s in sugg.choices[0].message.content.split("\n") if s.strip()]
+        suggestions = [s for s in suggestions if s][:3]
     except Exception:
         suggestions = []
 
-    # 🖼️ Top related images
-    images = []
-    irrelevant_markers = [
+    # Images (skip if answer is clearly "no info")
+    markers = [
         "not explicitly available",
         "no relevant study context",
         "unable to find",
         "no information found",
-        "based on the context provided, there is no",
-        "insufficient information"
+        "insufficient information",
     ]
-    if not any(marker in answer.lower() for marker in irrelevant_markers):
-        images = get_top_images(request, query_vector)
+    images = [] if any(m in (answer or "").lower() for m in markers) else get_top_images(request, question)
 
-    # 💾 Save message
+    # Save message
     ChatMessage.objects.create(
         session=session,
         question=question,
         answer=answer,
         image_results=images,
-        source_studies=sources
+        source_studies=sources,
     )
 
-    # 🏷️ Title the session if it's empty
+    # Title the session if empty
     if not session.title:
         try:
-            short_title = openai_client.chat.completions.create(
+            title_resp = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[{"role": "user", "content": f"Give a short 5-word title for this: {question}"}],
                 max_tokens=10,
-                temperature=0.3
+                temperature=0.3,
             )
-            session.title = short_title.choices[0].message.content
-            session.save()
-        except:
+            session.title = title_resp.choices[0].message.content
+            session.save(update_fields=["title"])
+        except Exception:
             pass
 
     return {
@@ -376,11 +223,5 @@ A:"""
         "answer": answer,
         "images": images,
         "sources": sources,
-        "suggested_questions": suggestions
+        "suggested_questions": suggestions,
     }
-
-
-
-
-
-

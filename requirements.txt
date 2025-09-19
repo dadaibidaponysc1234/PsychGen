@@ -185,3 +185,12 @@ whitenoise==6.7.0
 xhtml2pdf==0.2.16
 xyzservices==2024.9.0
 zipp==3.21.0
+
+# LangChain ecosystem
+langchain==0.2.14
+langchain-community==0.2.12
+langchain-openai==0.1.21
+langchain-pinecone==0.1.5
+
+# OpenAI API
+openai==1.44.1

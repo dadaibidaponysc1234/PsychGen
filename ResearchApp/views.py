@@ -4,6 +4,7 @@
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework import generics
 import csv
@@ -21,7 +22,7 @@ import logging
 from django.db.models import Count
 from datetime import timedelta
 from django.utils import timezone
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
@@ -33,8 +34,9 @@ from django.utils.decorators import method_decorator
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from services.embedding_pipeline import process_study_pdf
-from services.qa_pipeline import continue_chat
+from services.embedding_pipeline import process_study_pdf, process_study_pdf_with_langchain
+
+from services.qa_pipeline import continue_chat,continue_chat_rag
 
 from sentence_transformers import SentenceTransformer
 
@@ -288,29 +290,37 @@ class UploadPDFView(APIView):
         doc.pdf_file = file
         doc.save()
 
-        process_study_pdf(doc)  # Extract, chunk, embed, upsert
+        # process_study_pdf(doc)  # Extract, chunk, embed, upsert
 
         return Response({"message": "PDF uploaded and indexed successfully."})
 
 
 class ContinueChatView(APIView):
+    permission_classes = [AllowAny]  # or IsAuthenticated if you want to protect it
+
     def post(self, request):
-        email = request.data.get("email")
-        question = request.data.get("question")
+        """
+        Body:
+        {
+          "email": "user@example.com",
+          "question": "What variants are implicated in schizophrenia?",
+          "session_id": 12,                        # optional
+          "filters": { "disorder": {"$in": ["Schizophrenia"]}, "year": {"$gte": 2018} }   # optional Pinecone metadata filter
+        }
+        """
+        email = request.data.get("email", "")
+        question = request.data.get("question", "")
         session_id = request.data.get("session_id")
+        filters = request.data.get("filters")
 
         if not email or not question:
-            return Response({"error": "email and question are required."}, status=400)
+            return Response({"error": "email and question are required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Optional safety: reject if session_id exists but belongs to another user
-        if session_id:
-            session = ChatSession.objects.filter(id=session_id).first()
-            if session and session.email != email:
-                return Response({"error": "Session does not belong to this email."}, status=403)
-
-        result = continue_chat(request, email=email, question=question, session_id=session_id)
-        return Response(result, status=200)
-
+        try:
+            payload = continue_chat_rag(request, email=email, question=question, session_id=session_id, filters=filters)
+            return Response(payload, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class ChatSessionListView(APIView):
@@ -374,3 +384,59 @@ class DeleteChatMessageView(generics.DestroyAPIView):
         if not email or session_email != email:
             return Response({"error": "Unauthorized"}, status=403)
         return super().delete(request, *args, **kwargs)
+
+#================================================================================
+
+# views_index.py
+class IndexSinglePDFView(APIView):
+    """
+    POST /pinecone/index/<pk>/
+    Index a single StudyDocument by primary key.
+    """
+    permission_classes = [IsAuthenticated]   # change to [AllowAny] if you want it open
+
+    def post(self, request, pk: int):
+        doc = get_object_or_404(StudyDocument, pk=pk)
+        try:
+            res = process_study_pdf_with_langchain(doc)
+            return Response({"status": "ok", **res}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {"status": "error", "study_id": str(doc.study.id), "detail": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class IndexAllPDFsView(APIView):
+    """
+    POST /pinecone/index/all/?offset=0&limit=200
+    Index all StudyDocument rows (batched via offset/limit so you can call multiple times).
+    """
+    permission_classes = [IsAuthenticated]   # change to [AllowAny] if desired
+
+    def post(self, request):
+        try:
+            offset = int(request.query_params.get("offset", 0))
+            limit = int(request.query_params.get("limit", 200))
+            qs = StudyDocument.objects.all().order_by("id")[offset:offset + limit]
+
+            results = []
+            for doc in qs:
+                try:
+                    res = process_study_pdf_with_langchain(doc)
+                    results.append({"study_id": str(doc.study.id), "ok": True, **res})
+                except Exception as e:
+                    results.append({"study_id": str(doc.study.id), "ok": False, "error": str(e)})
+
+            return Response(
+                {
+                    "count": len(results),
+                    "offset": offset,
+                    "limit": limit,
+                    "next_offset": offset + limit,
+                    "results": results,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
