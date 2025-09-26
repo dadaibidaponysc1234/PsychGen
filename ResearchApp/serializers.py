@@ -1,4 +1,5 @@
 from rest_framework import serializers
+import json
 from .models import (Study, Disorder, BiologicalModality, GeneticSourceMaterial, 
                     ArticleType, StudyDesign, Country, StudyImage,ChatSession, ChatMessage)
 
@@ -84,3 +85,42 @@ class ChatSessionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatSession
         fields = ['id', 'email', 'title', 'created_at', 'messages']
+
+
+# 
+
+########################## ingest/serializers.py ####################################
+
+class StudyUpsertSerializer(serializers.Serializer):
+    """
+    Accepts:
+      - multipart/form-data:
+          - pdf: file (optional)
+          - payload: JSON string (required for study fields)
+      - application/json:
+          - payload: JSON object (or you can send fields top-level; the view handles that)
+
+    Note: Required field checks (e.g., title/abstract) are done in the view after we parse payload.
+    """
+    payload = serializers.JSONField(required=False)
+    pdf = serializers.FileField(required=False, allow_empty_file=False)
+
+    def validate_payload(self, value):
+        """
+        Allow payload to be provided as a JSON string in multipart requests.
+        Convert it to a Python dict for downstream use.
+        """
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return {}
+            try:
+                return json.loads(value)
+            except Exception:
+                raise serializers.ValidationError("`payload` must be valid JSON.")
+        return value
+
+    def validate(self, attrs):
+        # No hard requirements here—view will enforce title/abstract, etc.
+        # This keeps the serializer generic for both JSON and multipart usage.
+        return attrs

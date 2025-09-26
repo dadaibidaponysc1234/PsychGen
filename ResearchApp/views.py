@@ -8,14 +8,15 @@ from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework import generics
 import csv
+import re
 from io import StringIO
 from django.core.exceptions import ValidationError
 from django.db import models
-from .models import (Study, Disorder, BiologicalModality, 
-                    GeneticSourceMaterial, ArticleType, StudyDesign, 
+from .models import (Study, Disorder, BiologicalModality,
+                    GeneticSourceMaterial, ArticleType, StudyDesign,
                     Country,Visitor,StudyDocument, StudyImage, ChatSession,ChatMessage)
 from .serializers import (StudySerializer,VisitorCountSerializer, StudyImageSerializer,
-                            ChatSessionSerializer, ChatMessageSerializer)
+                            ChatSessionSerializer, ChatMessageSerializer, StudyUpsertSerializer)
 from django.http import HttpResponse
 import json
 import logging
@@ -25,8 +26,6 @@ from django.utils import timezone
 from rest_framework.permissions import IsAuthenticated, AllowAny
 
 from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.models import User
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import permission_classes
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
@@ -34,13 +33,33 @@ from django.utils.decorators import method_decorator
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from services.embedding_pipeline import process_study_pdf, process_study_pdf_with_langchain
+from services.embedding_pipeline import process_study_pdf_with_langchain
 
-from services.qa_pipeline import continue_chat,continue_chat_rag
+from services.qa_pipeline import continue_chat_rag
 
-from sentence_transformers import SentenceTransformer
+from langchain_openai import OpenAIEmbeddings
+# ResearchApp/views_ingest.py
 
-retriever = SentenceTransformer("all-mpnet-base-v2")  # CPU-compatible
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+
+from django.db import transaction
+
+from .models import StudyDocument
+from services.metadata_extractor import extract_text_from_pdf, extract_study_metadata_from_text
+# from services.study_upsert import upsert_study_with_metadata
+from typing import Any, Dict, List
+from django.db import transaction
+from django.db.models import Q
+from rest_framework.views import APIView
+from rest_framework import status, permissions, parsers
+from rest_framework.response import Response
+
+
+retriever = OpenAIEmbeddings(model="text-embedding-3-small")
+
+# from sentence_transformers import SentenceTransformer
+
+# retriever = SentenceTransformer("all-mpnet-base-v2")  # CPU-compatible
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +90,7 @@ class UploadCSVView(APIView):
         file = request.FILES.get('file')
         if not file:
             return Response({"error": "No file provided"}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         data = file.read().decode('ISO-8859-1')
         csv_data = csv.DictReader(StringIO(data))
 
@@ -151,7 +170,7 @@ class UploadCSVView(APIView):
                 'biological_modalities': (BiologicalModality, 'modality_name', row.get('Biological Modality', '').split(',')),
                 'genetic_source_materials': (GeneticSourceMaterial, 'material_type', row.get('Genetic Source Materials', '').split(','))
             }
-            
+
             for key, (model, field, value_list) in many_to_many_fields.items():
                 instances = []
                 # field_data = []
@@ -199,27 +218,27 @@ class DownloadCSVExampleView(APIView):
         # Write the CSV header
         writer.writerow([
             'PMID', 'Title', 'Abstract', 'Year', 'DOI', 'Journal Name', 'Countries', 'Impact Factor',
-            'Article Type', 'Funding Source', 'Lead Author', 'Disorder', 'Phenotype', 
-            'Diagnostic Criteria Used', 'Study Design', 'Sample Size', 'Age Range', 'Mean Age', 
-            'Male/Female Split', 'Biological Modality','Citation','Keywords', 'Date', 'Pages', 'Issue', 'Volume','Automatic Tags', 
+            'Article Type', 'Funding Source', 'Lead Author', 'Disorder', 'Phenotype',
+            'Diagnostic Criteria Used', 'Study Design', 'Sample Size', 'Age Range', 'Mean Age',
+            'Male/Female Split', 'Biological Modality','Citation','Keywords', 'Date', 'Pages', 'Issue', 'Volume','Automatic Tags',
             'Authors/Affiliations', 'Biological Risk Factor Studied','Biological Rationale Provided',
-            'Status of Corresponding Gene', 'Technology Platform', 
-            'Genetic Source Materials', 'Evaluation Method', 'Statistical Model', 
-            'Criteria for Significance', 'Validation Performed', 'Findings/Conclusions', 
-            'Generalisability of Conclusion', 'Adequate Statistical Powered','Comment', 
+            'Status of Corresponding Gene', 'Technology Platform',
+            'Genetic Source Materials', 'Evaluation Method', 'Statistical Model',
+            'Criteria for Significance', 'Validation Performed', 'Findings/Conclusions',
+            'Generalisability of Conclusion', 'Adequate Statistical Powered','Comment',
             'Should Exclude?'
         ])
 
         # Write a sample row
         writer.writerow([
-            '123456', 'Example Study Title', 'Study abstract', '2024', '10.1234/doi-example', 
-            'Journal of Genetics', 'USA, Canada', '5.8', 'Original Research', 'NIH', 'John Doe', 
-            'Schizophrenia', 'DSM-5','Pre-diagnosed', 'Case-Control', '100', '18-65', '35', '50/50', 'Genomics', 
-            '0', 'Social anxiety disorder; Genetics; Serotonin; Dopamine; Temperament.', 
+            '123456', 'Example Study Title', 'Study abstract', '2024', '10.1234/doi-example',
+            'Journal of Genetics', 'USA, Canada', '5.8', 'Original Research', 'NIH', 'John Doe',
+            'Schizophrenia', 'DSM-5','Pre-diagnosed', 'Case-Control', '100', '18-65', '35', '50/50', 'Genomics',
+            '0', 'Social anxiety disorder; Genetics; Serotonin; Dopamine; Temperament.',
             '2024-01-01', '123-135', '2', '12', 'Automatic tag', '[{"author": "John Doe", "affiliation": "University X"}]',
-            'Gene XYZ', 'Epigenetics hypothesis', 'Active', 'PCR', 'Blood', 
-            'DNA methylation', 'Regression', 'p < 0.05', 'Internal Validation', 
-            'No significant difference', 'Limited due to small sample size', 'low power', 
+            'Gene XYZ', 'Epigenetics hypothesis', 'Active', 'PCR', 'Blood',
+            'DNA methylation', 'Regression', 'p < 0.05', 'Internal Validation',
+            'No significant difference', 'Limited due to small sample size', 'low power',
             'Some remarks', 'No'
         ])
 
@@ -231,7 +250,7 @@ class VisitorCountAPIView(APIView):
     def get(self, request):
         # Count unique visitors by IP address
         unique_visitors = Visitor.objects.values('ip_address').distinct().count()
-        
+
         # Count total visits
         total_visits = Visitor.objects.count()
 
@@ -296,7 +315,7 @@ class UploadPDFView(APIView):
 
 
 class ContinueChatView(APIView):
-    permission_classes = [AllowAny]  # or IsAuthenticated if you want to protect it
+    # permission_classes = [AllowAny]  # or IsAuthenticated if you want to protect it
 
     def post(self, request):
         """
@@ -387,6 +406,29 @@ class DeleteChatMessageView(generics.DestroyAPIView):
 
 #================================================================================
 
+# ---------- 1) Extract only: upload PDF, return JSON (no DB writes) ----------
+class ExtractMetadataView(APIView):
+    # permission_classes = [IsAuthenticated]  # or AllowAny for testing
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        """
+        Accepts: multipart/form-data with 'file' (PDF)
+        Returns: JSON metadata (no database writes)
+        """
+        file = request.FILES.get("file")
+        if not file:
+            return Response({"error": "Missing PDF `file`"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            text = extract_text_from_pdf(file)
+            meta_model = extract_study_metadata_from_text(text)
+            return Response({"metadata": meta_model.dict()}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+#================================================================================
+
 # views_index.py
 class IndexSinglePDFView(APIView):
     """
@@ -440,3 +482,250 @@ class IndexAllPDFsView(APIView):
             )
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+########## views for upload ################
+# ingest/views.py
+# ----------------- helpers -----------------
+def _ensure_list_str(v: Any) -> List[str]:
+    if v is None:
+        return []
+    if isinstance(v, list):
+        return [str(x).strip() for x in v if str(x).strip()]
+    s = str(v).strip()
+    return [s] if s else []
+
+def _upsert_m2m(model, values: List[str], attr: str) -> List[int]:
+    ids: List[int] = []
+    for val in values:
+        obj, _ = model.objects.get_or_create(**{attr: val})
+        ids.append(obj.id)
+    return ids
+
+def _clean_int(val, default=None):
+    if val in (None, "", "N/A"):
+        return default
+    try:
+        if isinstance(val, str):
+            m = re.search(r"\d+", val.replace(",", ""))
+            return int(m.group(0)) if m else default
+        return int(val)
+    except Exception:
+        return default
+
+def _normalize_authors_affiliations(aa: Any) -> Dict[str, Any]:
+    # Ensure: {"authors":[{"name":..., "affiliation_numbers":[...]}], "affiliations":{"1":"...", ...}}
+    if isinstance(aa, dict) and "authors" in aa and "affiliations" in aa:
+        authors = []
+        for it in aa.get("authors", []) or []:
+            if isinstance(it, dict):
+                name = str(it.get("name", "")).strip()
+                nums = it.get("affiliation_numbers") or []
+                if isinstance(nums, (str, int)):
+                    nums = [str(nums)]
+                elif isinstance(nums, list):
+                    nums = [str(x) for x in nums]
+                else:
+                    nums = []
+                if name:
+                    authors.append({"name": name, "affiliation_numbers": nums})
+            elif isinstance(it, str) and it.strip():
+                authors.append({"name": it.strip(), "affiliation_numbers": []})
+        affs = {}
+        raw_affs = aa.get("affiliations") or {}
+        if isinstance(raw_affs, dict):
+            for k, v in raw_affs.items():
+                affs[str(k)] = str(v)
+        elif isinstance(raw_affs, list):
+            for i, v in enumerate(raw_affs, start=1):
+                affs[str(i)] = str(v)
+        return {"authors": authors, "affiliations": affs}
+
+    if isinstance(aa, list):
+        authors = []
+        for it in aa:
+            if isinstance(it, dict) and "name" in it:
+                nm = str(it.get("name", "")).strip()
+                if nm:
+                    nums = it.get("affiliation_numbers") or []
+                    if isinstance(nums, (str, int)):
+                        nums = [str(nums)]
+                    elif isinstance(nums, list):
+                        nums = [str(x) for x in nums]
+                    else:
+                        nums = []
+                    authors.append({"name": nm, "affiliation_numbers": nums})
+            elif isinstance(it, str) and it.strip():
+                authors.append({"name": it.strip(), "affiliation_numbers": []})
+        return {"authors": authors, "affiliations": {}}
+
+    if isinstance(aa, str) and aa.strip():
+        return {"authors": [{"name": aa.strip(), "affiliation_numbers": []}], "affiliations": {}}
+
+    return {"authors": [], "affiliations": {}}
+
+def _parse_payload(request) -> Dict[str, Any]:
+    # multipart: payload is JSON string; JSON body: payload may be object or top-level fields
+    data = request.data
+    if "payload" in data:
+        payload = data.get("payload")
+        if isinstance(payload, (dict, list)):
+            return payload
+        if isinstance(payload, str) and payload.strip():
+            try:
+                return json.loads(payload)
+            except Exception:
+                pass
+    payload = {}
+    for k, v in data.items():
+        if k == "pdf":
+            continue
+        payload[k] = v
+    return payload
+
+# ----------------- endpoint -----------------
+class StudySaveView(APIView):
+    """
+    POST /api/studies/save/
+      - Upsert Study (by study_id, else by unique (title, year, pmid))
+      - Then create/update StudyDocument with the provided PDF (no text extraction)
+
+    Accepts:
+      - multipart/form-data: pdf=<file> (optional), payload=<JSON string>
+      - application/json: {"payload": {...}} or top-level {...}
+
+    Response:
+    {
+      "study_id": int,
+      "created": bool,
+      "document_id": int|null,
+      "message": "Study saved"
+    }
+    """
+    permission_classes = [permissions.AllowAny]
+    parser_classes = [parsers.MultiPartParser, parsers.JSONParser, parsers.FormParser]
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        ser = StudyUpsertSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+
+        payload = _parse_payload(request)
+        pdf_file = request.FILES.get("pdf")
+
+        title = (payload.get("title") or "").strip()
+        abstract = (payload.get("abstract") or "").strip()
+        if not title or not abstract:
+            return Response(
+                {"error": "Both 'title' and 'abstract' are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Upsert Study
+        study = None
+        created = False
+
+        study_id = payload.get("study_id")
+        if study_id:
+            study = Study.objects.filter(id=study_id).first()
+
+        if study is None:
+            year = _clean_int(payload.get("year"))
+            pmid = (payload.get("pmid") or None) or None
+            study = Study.objects.filter(Q(title=title) & Q(year=year) & Q(pmid=pmid)).first()
+
+        if study is None:
+            study = Study(title=title, abstract=abstract)
+            created = True
+
+        # Scalars
+        study.title = title
+        study.abstract = abstract
+        study.pmid = (payload.get("pmid") or None) or None
+        study.year = _clean_int(payload.get("year"))
+        study.DOI = (payload.get("DOI") or "")[:100]
+        study.journal_name = payload.get("journal_name") or None
+
+        impact_factor = payload.get("impact_factor")
+        try:
+            if isinstance(impact_factor, str):
+                impact_factor = float(impact_factor.replace(",", "."))
+            elif impact_factor is not None:
+                impact_factor = float(impact_factor)
+        except Exception:
+            impact_factor = None
+        study.impact_factor = impact_factor
+
+        study.funding_source = payload.get("funding_source") or None
+        study.lead_author = payload.get("lead_author") or None
+
+        study.phenotype = payload.get("phenotype") or None
+        study.diagnostic_criteria_used = payload.get("diagnostic_criteria_used") or None
+
+        sd_name = (payload.get("study_designs") or "").strip()
+        if sd_name:
+            sd_obj, _ = StudyDesign.objects.get_or_create(design_name=sd_name)
+            study.study_designs = sd_obj
+        else:
+            study.study_designs = None
+
+        study.sample_size = payload.get("sample_size") or None
+        study.age_range = payload.get("age_range") or None
+        study.mean_age = payload.get("mean_age") or None
+        study.male_female_split = payload.get("male_female_split") or None
+
+        study.citation = _clean_int(payload.get("citation"), default=0) or 0
+        study.keyword = payload.get("keyword") or None
+        study.date = payload.get("date") or None
+        study.pages = payload.get("pages") or None
+        study.issue = payload.get("issue") or None
+        study.volume = payload.get("volume") or None
+        study.automatic_tags = payload.get("automatic_tags") or None
+
+        study.authors_affiliations = _normalize_authors_affiliations(payload.get("authors_affiliations"))
+
+        study.biological_risk_factor_studied = payload.get("biological_risk_factor_studied") or None
+        study.biological_rationale_provided = payload.get("biological_rationale_provided") or None
+        study.status_of_corresponding_gene = payload.get("status_of_corresponding_gene") or None
+        study.technology_platform = payload.get("technology_platform") or None
+        study.evaluation_method = payload.get("evaluation_method") or None
+        study.statistical_model = payload.get("statistical_model") or None
+        study.criteria_for_significance = payload.get("criteria_for_significance") or None
+        study.validation_performed = payload.get("validation_performed") or None
+        study.findings_conclusions = payload.get("findings_conclusions") or None
+        study.generalisability_of_conclusion = payload.get("generalisability_of_conclusion") or None
+        study.adequate_statistical_powered = payload.get("adequate_statistical_powered") or None
+        study.comment = payload.get("comment") or None
+        study.should_exclude = bool(payload.get("should_exclude", False))
+
+        study.save()
+
+        # M2M
+        study.countries.set(_upsert_m2m(Country, _ensure_list_str(payload.get("countries")), "name"))
+        study.article_type.set(_upsert_m2m(ArticleType, _ensure_list_str(payload.get("article_type")), "article_name"))
+        study.disorder.set(_upsert_m2m(Disorder, _ensure_list_str(payload.get("disorder")), "disorder_name"))
+        study.biological_modalities.set(_upsert_m2m(BiologicalModality, _ensure_list_str(payload.get("biological_modalities")), "modality_name"))
+        study.genetic_source_materials.set(_upsert_m2m(GeneticSourceMaterial, _ensure_list_str(payload.get("genetic_source_materials")), "material_type"))
+
+        # StudyDocument: only store PDF (no text extraction here)
+        doc = None
+        if pdf_file:
+            doc, _ = StudyDocument.objects.get_or_create(study=study)
+            doc.pdf_file = pdf_file  # just save the file
+            # DO NOT touch doc.extracted_text here
+            doc.save()
+        else:
+            # If no file was provided but a document exists, leave it untouched
+            existing = StudyDocument.objects.filter(study=study).first()
+            if existing:
+                doc = existing
+
+        return Response(
+            {
+                "study_id": study.id,
+                "created": created,
+                "document_id": doc.id if doc else None,
+                "message": "Study saved",
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )

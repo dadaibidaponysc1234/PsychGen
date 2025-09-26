@@ -42,7 +42,7 @@ urlpatterns = [
     path('api/', include('ResearchApp.urls')),
     path('api/', include('clientSide.urls')),
     path('api/', include('Aboutpage.urls')),
-    path('api/', include('prs_pineline.urls')),
+    # path('api/', include('prs_pineline.urls')),
     path('swagger<format>/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
